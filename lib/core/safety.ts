@@ -35,8 +35,8 @@ export function safeArchivePath(name: string, root = '/extract'): string {
     name.includes('\\') ||
     BIDI_CONTROL_CHARACTERS.test(name) ||
     [...name].some((character) => {
-      const code = character.codePointAt(0)!;
-      return code <= 31 || code === 127;
+      const code = character.codePointAt(0);
+      return code !== undefined && (code <= 31 || code === 127);
     })
   ) {
     throw new ArchiveSafetyError('Archive entry contains an unsafe filename.');
