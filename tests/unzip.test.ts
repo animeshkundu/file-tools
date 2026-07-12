@@ -123,6 +123,12 @@ function makeCrcCorruptArchive(): Uint8Array {
   return archive;
 }
 
+function fileFromBytes(bytes: Uint8Array, name: string): File {
+  const buffer = new ArrayBuffer(bytes.byteLength);
+  new Uint8Array(buffer).set(bytes);
+  return new File([buffer], name);
+}
+
 function patchDeclaredUncompressedSizes(archive: Uint8Array, size: number): Uint8Array {
   const patched = archive.slice();
   const localSignature = [0x50, 0x4b, 0x03, 0x04];
@@ -229,11 +235,7 @@ describe('extractZip', () => {
 
     expect(() => extractZip(archive, { maxEntryBytes: 1n })).toThrow(ArchiveSafetyError);
     await expect(
-      extractZipFile(
-        new File([archive.buffer as ArrayBuffer], 'rogue.zip'),
-        { onEntry },
-        { maxEntryBytes: 1n },
-      ),
+      extractZipFile(fileFromBytes(archive, 'rogue.zip'), { onEntry }, { maxEntryBytes: 1n }),
     ).rejects.toBeInstanceOf(ArchiveSafetyError);
     expect(attemptedOversizedAllocation).toBe(false);
     expect(onEntry).not.toHaveBeenCalled();
@@ -248,7 +250,7 @@ describe('extractZip', () => {
     const onEntry = vi.fn();
     const archive = makeArchive();
     await expect(
-      extractZipFile(new File([archive.buffer as ArrayBuffer], 'malicious.zip'), { onEntry }),
+      extractZipFile(fileFromBytes(archive, 'malicious.zip'), { onEntry }),
     ).rejects.toBeInstanceOf(ArchiveSafetyError);
     expect(onEntry).not.toHaveBeenCalled();
   });
