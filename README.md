@@ -1,6 +1,6 @@
 # File Tools
 
-A privacy-first Chrome and Firefox extension for opening ZIP files entirely on your device. No upload, account, ads, tracking, network access, host access, or extension permissions.
+A privacy-first Chrome and Firefox extension for opening ZIP files entirely on your device, with no upload, account, ads, or tracking. Its CSP blocks fetch, XHR, WebSocket, beacon, form, and frame egress; the extension implements no navigation or WebRTC egress and requests no host or install-time permissions.
 
 ## Included seed tool
 

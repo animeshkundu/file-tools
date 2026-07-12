@@ -5,9 +5,6 @@ const MANIFEST_PATHS = ['.output/chrome-mv3/manifest.json', '.output/firefox-mv3
 
 const ASCII_WHITESPACE = /[ \t\r\n\f]+/u;
 const ALLOWED_ASCII_WHITESPACE = new Set([9, 10, 12, 13, 32]);
-const NON_ASCII_WHITESPACE = new Set([
-  0x85, 0xa0, 0x1680, 0x2028, 0x2029, 0x202f, 0x205f, 0x3000, 0xfeff,
-]);
 
 const REQUIRED_DIRECTIVES = new Map([
   ['default-src', ["'none'"]],
@@ -23,12 +20,14 @@ const REQUIRED_DIRECTIVES = new Map([
 function parsePolicy(policy) {
   for (const character of policy) {
     const codePoint = character.codePointAt(0);
-    const isControl = codePoint < 32 || (codePoint >= 127 && codePoint <= 159);
-    const isNonAsciiWhitespace =
-      NON_ASCII_WHITESPACE.has(codePoint) || (codePoint >= 0x2000 && codePoint <= 0x200a);
+    if (codePoint > 127) {
+      throw new Error('CSP contains a non-ASCII character');
+    }
 
-    if ((isControl && !ALLOWED_ASCII_WHITESPACE.has(codePoint)) || isNonAsciiWhitespace) {
-      throw new Error('CSP contains a disallowed control or non-ASCII whitespace character');
+    const isControl = codePoint < 32 || codePoint === 127;
+
+    if (isControl && !ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
+      throw new Error('CSP contains a disallowed ASCII control character');
     }
   }
 
@@ -66,7 +65,12 @@ function verifyManifest(manifest, manifestPath) {
 
   assertExactArray(manifest.permissions, [], `${manifestPath}: permissions`);
 
-  for (const field of ['host_permissions', 'optional_host_permissions']) {
+  for (const field of [
+    'host_permissions',
+    'optional_host_permissions',
+    'optional_permissions',
+    'content_scripts',
+  ]) {
     if (field in manifest) {
       assertExactArray(manifest[field], [], `${manifestPath}: ${field}`);
     }
@@ -84,7 +88,21 @@ function verifyManifest(manifest, manifestPath) {
     );
   }
 
-  const policy = manifest.content_security_policy?.extension_pages;
+  const contentSecurityPolicy = manifest.content_security_policy;
+  if (
+    typeof contentSecurityPolicy !== 'object' ||
+    contentSecurityPolicy === null ||
+    Array.isArray(contentSecurityPolicy)
+  ) {
+    throw new Error(`${manifestPath}: content_security_policy must be an object`);
+  }
+  assertExactArray(
+    Object.keys(contentSecurityPolicy),
+    ['extension_pages'],
+    `${manifestPath}: content_security_policy keys`,
+  );
+
+  const policy = contentSecurityPolicy.extension_pages;
   if (typeof policy !== 'string') {
     throw new Error(`${manifestPath}: content_security_policy.extension_pages must be a string`);
   }
