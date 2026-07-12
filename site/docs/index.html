@@ -1,0 +1,264 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <meta name="description" content="File Tools documentation — how to use Unzip, privacy boundaries, permissions, safety limits, and browser support." />
+  <title>Docs — File Tools</title>
+  <link rel="stylesheet" href="/file-tools/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <header class="site-header">
+    <a class="brand" href="/file-tools/" aria-label="File Tools home">FILE TOOLS</a>
+    <nav aria-label="Site">
+      <ul class="site-nav">
+        <li><a href="/file-tools/">Home</a></li>
+        <li><a href="/file-tools/docs/" aria-current="page">Docs</a></li>
+        <li><a href="https://github.com/animeshkundu/file-tools">Source</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main-content">
+    <div class="page-wrap">
+      <div class="container">
+
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">DOCUMENTATION</p>
+            <h1>File Tools docs</h1>
+            <p class="lede">
+              How to use the Unzip extension, what it can and cannot do, and what the privacy
+              boundaries actually mean.
+            </p>
+          </div>
+        </header>
+
+        <section aria-labelledby="using-unzip-heading">
+          <div class="card">
+            <h2 id="using-unzip-heading">Using Unzip</h2>
+            <p>
+              The Unzip tool is built into the File Tools browser extension. Open the extension page
+              by clicking the toolbar icon or pinning File Tools and clicking it. No additional setup
+              is needed.
+            </p>
+
+            <h3>Extracting a ZIP file</h3>
+            <ol>
+              <li>Open the File Tools extension page.</li>
+              <li>
+                Drop a ZIP file onto the drop zone, or click the zone (or press
+                <kbd>Enter</kbd>/<kbd>Space</kbd> when it has keyboard focus) to open a file picker.
+              </li>
+              <li>
+                The extension validates the archive and shows a file tree with names and sizes.
+                Nothing is extracted to disk yet.
+              </li>
+              <li>
+                Click <strong>Download</strong> next to any entry to save that file, or click
+                <strong>Download all</strong> to save every entry at once.
+              </li>
+            </ol>
+
+            <h3>Download all and folder paths</h3>
+            <p>
+              "Download all" preserves the original folder structure. Because multi-file downloads
+              with paths require the <code>downloads</code> browser permission, the extension asks
+              for that permission the first time you use this action. You can decline and still
+              download individual files one at a time; no permission is needed for single-file
+              downloads.
+            </p>
+
+            <h3>Cancelling an extraction</h3>
+            <p>
+              Click <strong>Cancel</strong> during extraction to stop immediately. The worker is
+              terminated, any partially extracted data is discarded, and the drop zone resets to
+              idle.
+            </p>
+
+            <h3>Supported formats</h3>
+            <p>
+              The current release supports standard ZIP archives (deflate, store, and deflate64
+              methods). Files compressed with methods outside this set — including bzip2 and LZMA —
+              will report an unsupported method error. RAR, 7z, TAR, and other formats are out of
+              scope for the current release.
+            </p>
+          </div>
+        </section>
+
+        <section aria-labelledby="privacy-heading">
+          <div class="card">
+            <h2 id="privacy-heading">Local processing and privacy boundaries</h2>
+
+            <p>The precise capability contract for this extension is:</p>
+            <blockquote class="contract-block">
+              Local processing, no upload; zero install-time permissions for the core; optional
+              <code>downloads</code> permission requested only for tree-preserving extract-all.
+            </blockquote>
+
+            <p>
+              All ZIP parsing and extraction runs in a Web Worker inside the extension's sandboxed
+              page. The archive bytes never leave your device. The extension page's Content Security
+              Policy denies all external connections (<code>connect-src 'none'</code>), preventing
+              network egress at the browser level even if a bug were introduced in the code.
+            </p>
+
+            <p>
+              The extension is <strong>offline-capable</strong>: it has no server dependency, no
+              telemetry, no analytics, and no login. "Offline" and "no network" refer to the
+              extension's file-processing behavior. The public Pages site you are reading is a
+              regular HTTPS web page — visiting it uses your network normally.
+            </p>
+
+            <h3>Verifying the contract</h3>
+            <p>
+              Zero manifest permissions do not prove privacy on their own — the permission list
+              shows what the browser would allow, not what the code does. To verify the contract:
+            </p>
+            <ul>
+              <li>
+                Review the extension source at
+                <a href="https://github.com/animeshkundu/file-tools">github.com/animeshkundu/file-tools</a>.
+              </li>
+              <li>
+                Inspect the built manifests in <code>.output/chrome-mv3/</code> and
+                <code>.output/firefox-mv3/</code> for declared permissions and CSP directives.
+              </li>
+              <li>
+                Load the unpacked extension in your browser's developer tools and observe network
+                requests during an extraction: none should be made.
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <section aria-labelledby="permissions-heading">
+          <div class="card">
+            <h2 id="permissions-heading">Permissions</h2>
+            <table class="data-table" aria-label="Extension permissions">
+              <thead>
+                <tr>
+                  <th scope="col">Permission</th>
+                  <th scope="col">When requested</th>
+                  <th scope="col">Why</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><em>None</em></td>
+                  <td>Install time</td>
+                  <td>No install-time permissions are declared.</td>
+                </tr>
+                <tr>
+                  <td><code>downloads</code></td>
+                  <td>First use of "Download all"</td>
+                  <td>
+                    Required by the browser API to save multiple files while preserving folder paths.
+                    Declining this permission does not prevent single-file downloads.
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section aria-labelledby="safety-heading">
+          <div class="card">
+            <h2 id="safety-heading">ZIP standard scope and safety limits</h2>
+            <p>
+              The extension handles standard ZIP archives within the following boundaries. Limits
+              exist to prevent out-of-memory and denial-of-service conditions from adversarially
+              constructed archives.
+            </p>
+            <ul>
+              <li><strong>Input size:</strong> enforced before the worker starts.</li>
+              <li><strong>Entry count:</strong> capped per archive.</li>
+              <li><strong>Aggregate extracted bytes:</strong> checked before accepting each decoded chunk.</li>
+              <li><strong>Path depth:</strong> entries exceeding the maximum nesting depth are rejected.</li>
+              <li><strong>Wall time:</strong> a timeout terminates extraction that runs too long.</li>
+            </ul>
+
+            <h3>Path safety</h3>
+            <p>
+              Before an entry is accepted, its decoded path is checked for path traversal sequences
+              (<code>..</code>), absolute paths, drive-letter prefixes, backslashes, UNC paths, NUL
+              bytes, control characters, and Windows reserved device names. Any entry failing a
+              check is skipped and reported.
+            </p>
+
+            <h3>What the ZIP scope covers</h3>
+            <p>
+              Standard ZIP using deflate, store, and deflate64 compression, including archives with
+              Zip64 extensions for entries larger than 4 GiB. The ZIP central directory is
+              authoritative; local headers are treated as potentially unreliable and cross-checked.
+            </p>
+
+            <h3>What is out of scope</h3>
+            <p>
+              Nested archive extraction (ZIP-in-ZIP), TAR, GZ, bzip2, xz, LZMA, RAR, and 7z are not
+              supported in the current release. RAR and 7z additionally carry license considerations
+              that require a separate review.
+            </p>
+          </div>
+        </section>
+
+        <section aria-labelledby="browsers-heading">
+          <div class="card">
+            <h2 id="browsers-heading">Browser support</h2>
+            <p>
+              File Tools is a standard MV3 browser extension and ships to Chrome and Firefox from a
+              single codebase using the <code>browser.*</code> namespace for cross-browser
+              compatibility.
+            </p>
+            <p>
+              Minimum browser versions and a full OS compatibility matrix will be declared and
+              recorded in CI before the first tagged release. Until then, the extension is
+              <em>not</em> a versioned release and the minimum supported versions are not
+              formally committed.
+            </p>
+          </div>
+        </section>
+
+        <section aria-labelledby="support-heading">
+          <div class="card">
+            <h2 id="support-heading">Support and source</h2>
+            <ul>
+              <li>
+                <strong>Source code:</strong>
+                <a href="https://github.com/animeshkundu/file-tools">github.com/animeshkundu/file-tools</a>
+              </li>
+              <li>
+                <strong>Issues and feature requests:</strong>
+                <a href="https://github.com/animeshkundu/file-tools/issues">GitHub Issues</a>
+              </li>
+              <li>
+                <strong>Third-party notices:</strong>
+                <a href="https://github.com/animeshkundu/file-tools/blob/main/THIRD-PARTY.md">THIRD-PARTY.md</a>
+              </li>
+            </ul>
+          </div>
+        </section>
+
+        <footer class="trust-chips" aria-label="Privacy summary">
+          <span>No uploads</span>
+          <span>No account</span>
+          <span>No permissions at install</span>
+          <span>No network from the extension</span>
+        </footer>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      <a href="/file-tools/">Home</a> ·
+      <a href="/file-tools/docs/">Docs</a> ·
+      <a href="https://github.com/animeshkundu/file-tools">Source on GitHub</a>
+    </p>
+  </footer>
+</body>
+</html>
