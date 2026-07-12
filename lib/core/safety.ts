@@ -28,6 +28,7 @@ export class ArchiveSafetyError extends Error {
 const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
 const WINDOWS_UNSAFE_CHARACTERS = /[<>:"|?*]/u;
 const BIDI_CONTROL_CHARACTERS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+const TEXT_ENCODER = new TextEncoder();
 
 export function safeArchivePath(name: string, root = '/extract'): string {
   if (
@@ -83,6 +84,9 @@ export function assertRegularEntry(kind: ArchiveEntryKind): void {
 }
 
 export function parseUnsignedLittleEndian(bytes: Uint8Array): bigint {
+  if (bytes.length > 8) {
+    throw new ArchiveSafetyError('Unsigned integer is too large to parse safely.');
+  }
   let value = 0n;
   for (let index = bytes.length - 1; index >= 0; index -= 1) {
     value = (value << 8n) | BigInt(bytes[index]!);
@@ -94,6 +98,7 @@ export class ArchiveSafetyBudget {
   readonly limits: ArchiveLimits;
   readonly startedAt: number;
   private entries = 0;
+  private declaredBytes = 0n;
   private emittedBytes = 0n;
   private readonly paths = new Set<string>();
   private readonly comparablePaths = new Set<string>();
@@ -133,7 +138,7 @@ export class ArchiveSafetyBudget {
     if (depth > this.limits.maxPathDepth) {
       throw new ArchiveSafetyError('Archive entry path is too deep.');
     }
-    if (new TextEncoder().encode(safePath).byteLength > this.limits.maxPathBytes) {
+    if (TEXT_ENCODER.encode(safePath).byteLength > this.limits.maxPathBytes) {
       throw new ArchiveSafetyError('Archive entry path is too long.');
     }
     if (this.entries >= this.limits.maxEntries) {
@@ -157,6 +162,11 @@ export class ArchiveSafetyBudget {
     if (size < 0n || size > this.limits.maxEmittedBytes) {
       throw new ArchiveSafetyError('Archive declares an entry larger than the extraction limit.');
     }
+    const declaredBytes = this.declaredBytes + size;
+    if (declaredBytes > this.limits.maxEmittedBytes) {
+      throw new ArchiveSafetyError('Archive declared sizes exceed the extraction limit.');
+    }
+    this.declaredBytes = declaredBytes;
   }
 
   addEmittedBytes(size: number | bigint): void {

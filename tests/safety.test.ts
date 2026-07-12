@@ -40,6 +40,10 @@ describe('parseUnsignedLittleEndian', () => {
       parseUnsignedLittleEndian(Uint8Array.of(0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff)),
     ).toBe(2n ** 64n - 1n);
   });
+
+  it('rejects values that exceed 64 bits', () => {
+    expect(() => parseUnsignedLittleEndian(new Uint8Array(9))).toThrow(ArchiveSafetyError);
+  });
 });
 
 describe('ArchiveSafetyBudget', () => {
@@ -53,6 +57,12 @@ describe('ArchiveSafetyBudget', () => {
   it('parses and checks declared sizes as bigint values', () => {
     const budget = new ArchiveSafetyBudget({ maxEmittedBytes: 4n });
     expect(() => budget.checkDeclaredSize(2n ** 64n - 1n)).toThrow(/declares/u);
+  });
+
+  it('enforces a cumulative declared-size budget', () => {
+    const budget = new ArchiveSafetyBudget({ maxEmittedBytes: 10n });
+    budget.checkDeclaredSize(6n);
+    expect(() => budget.checkDeclaredSize(5n)).toThrow(/declared sizes exceed/u);
   });
 
   it('enforces entry-count, path-depth, and encoded path-size caps', () => {

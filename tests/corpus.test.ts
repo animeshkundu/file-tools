@@ -1,4 +1,5 @@
 import { readFileSync, readdirSync } from 'node:fs';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { ArchiveSafetyError } from '../lib/core/safety';
@@ -18,7 +19,7 @@ const fixtureNames = [
 ] as const;
 
 function fixture(name: (typeof fixtureNames)[number]): Uint8Array {
-  return readFileSync(`${corpusDirectory}/${name}`);
+  return readFileSync(join(corpusDirectory, name));
 }
 
 function findSignature(bytes: Uint8Array, signature: readonly number[]): number {
@@ -29,10 +30,16 @@ function findSignature(bytes: Uint8Array, signature: readonly number[]): number 
 }
 
 function uint16(bytes: Uint8Array, offset: number): number {
+  if (offset < 0 || offset + 2 > bytes.length) {
+    throw new Error('Out-of-bounds uint16 read while checking fixture integrity.');
+  }
   return bytes[offset]! | (bytes[offset + 1]! << 8);
 }
 
 function uint32(bytes: Uint8Array, offset: number): number {
+  if (offset < 0 || offset + 4 > bytes.length) {
+    throw new Error('Out-of-bounds uint32 read while checking fixture integrity.');
+  }
   return (
     (bytes[offset]! |
       (bytes[offset + 1]! << 8) |
@@ -72,11 +79,11 @@ describe('adversarial ZIP corpus', () => {
   it.each(['truncated.zip', 'unsupported-method.zip'] as const)(
     'fails cleanly on malformed structure in %s',
     (name) => {
-      expect(() => extractZip(fixture(name))).toThrow(Error);
+      expect(() => extractZip(fixture(name))).toThrow(ArchiveSafetyError);
     },
   );
 
-  it('retains a genuinely CRC-corrupt fixture', () => {
+  it('rejects a genuinely CRC-corrupt fixture', () => {
     const bytes = fixture('crc-corrupt.zip');
     const local = findSignature(bytes, [0x50, 0x4b, 0x03, 0x04]);
     const nameLength = uint16(bytes, local + 26);
@@ -86,6 +93,7 @@ describe('adversarial ZIP corpus', () => {
     expect(crc32(bytes.subarray(payloadOffset, payloadOffset + size))).not.toBe(
       uint32(bytes, local + 14),
     );
+    expect(() => extractZip(bytes)).toThrow(/CRC/u);
   });
 
   it('retains a genuine local/central-directory filename disagreement', () => {
