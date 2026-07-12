@@ -113,8 +113,10 @@ describe('verify-csp', () => {
     expect(result.status, result.stderr).toBe(1);
   });
 
-  it('rejects a missing built manifest', async () => {
-    const result = await runVerifier({ firefoxManifest: null });
+  it.each(['chrome', 'firefox'] as const)('rejects a missing %s manifest', async (target) => {
+    const result = await runVerifier(
+      target === 'chrome' ? { chromeManifest: null } : { firefoxManifest: null },
+    );
     expect(result.status, result.stderr).toBe(1);
   });
 
