@@ -1,22 +1,39 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { downloadZip } from 'client-zip';
 import { Button } from '../../components/Button';
 import { FileTree } from '../../components/FileTree';
-import { Progress } from '../../components/Progress';
-import { downloadBlob } from '../../lib/core/download';
 import { Dropzone } from '../../lib/core/dropzone';
 import { formatBytes } from '../../lib/core/format';
 import { runUnzipWorker, type WorkerController } from '../../lib/core/worker';
-import type { ExtractedEntry } from '../../lib/tools/unzip/types';
+import { assertArchiveInputSize, type ExtractedEntry } from '../../lib/tools/unzip/types';
 
 type Status = 'idle' | 'extracting' | 'ready' | 'error';
+const DOWNLOAD_CLEANUP_DELAY_MS = 1_000;
 
 export default function App() {
   const [status, setStatus] = useState<Status>('idle');
   const [archiveName, setArchiveName] = useState('');
   const [entries, setEntries] = useState<ExtractedEntry[]>([]);
+  const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
   const controllerRef = useRef<WorkerController | null>(null);
+  const operationRef = useRef(0);
+  const objectUrlsRef = useRef(new Set<string>());
+
+  function revokeObjectUrls() {
+    for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
+    objectUrlsRef.current.clear();
+  }
+
+  useEffect(
+    () => () => {
+      operationRef.current += 1;
+      controllerRef.current?.cancel();
+      controllerRef.current = null;
+      revokeObjectUrls();
+    },
+    [],
+  );
 
   async function openArchive(file: File) {
     if (!file.name.toLowerCase().endsWith('.zip')) {
@@ -24,38 +41,79 @@ export default function App() {
       setStatus('error');
       return;
     }
+    try {
+      assertArchiveInputSize(file);
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : 'This ZIP file is too large.');
+      setStatus('error');
+      return;
+    }
+    const operation = operationRef.current + 1;
+    operationRef.current = operation;
+    controllerRef.current?.cancel();
+    revokeObjectUrls();
     setArchiveName(file.name);
     setEntries([]);
+    setProgress(0);
     setError('');
     setStatus('extracting');
-    const controller = runUnzipWorker(file);
-    controllerRef.current = controller;
     try {
+      const controller = runUnzipWorker(file, {
+        onEntry: (entry) => {
+          if (operationRef.current === operation) setEntries((current) => [...current, entry]);
+        },
+        onProgress: (loadedBytes, totalBytes) => {
+          if (operationRef.current !== operation) return;
+          setProgress(totalBytes === 0 ? 100 : Math.round((loadedBytes / totalBytes) * 100));
+        },
+      });
+      controllerRef.current = controller;
       const result = await controller.promise;
-      if (result.type !== 'complete') return;
-      setEntries(result.entries);
+      if (operationRef.current !== operation || result.type !== 'complete') return;
+      setProgress(100);
       setStatus('ready');
     } catch (reason) {
+      if (operationRef.current !== operation) return;
+      setEntries([]);
+      setProgress(0);
       setError(reason instanceof Error ? reason.message : 'Could not extract this archive.');
       setStatus('error');
     } finally {
-      controllerRef.current = null;
+      if (operationRef.current === operation) controllerRef.current = null;
     }
   }
 
+  function download(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    objectUrlsRef.current.add(url);
+    const anchor = document.createElement('a');
+    anchor.href = url;
+    anchor.download = filename;
+    anchor.click();
+    window.setTimeout(() => {
+      URL.revokeObjectURL(url);
+      objectUrlsRef.current.delete(url);
+    }, DOWNLOAD_CLEANUP_DELAY_MS);
+  }
+
   function downloadEntry(entry: ExtractedEntry) {
-    downloadBlob(new Blob([entry.bytes as BlobPart]), entry.path.split('/').pop() ?? 'file');
+    download(new Blob([entry.bytes as BlobPart]), entry.path.split('/').pop() ?? 'file');
   }
 
   async function downloadAll() {
     const files = entries.map((entry) => ({ name: entry.path, input: entry.bytes }));
     const blob = await downloadZip(files).blob();
-    downloadBlob(blob, `${archiveName.replace(/\.zip$/iu, '')}-extracted.zip`);
+    download(blob, `${archiveName.replace(/\.zip$/iu, '')}-extracted.zip`);
   }
 
   function reset() {
+    operationRef.current += 1;
+    controllerRef.current?.cancel();
+    controllerRef.current = null;
+    revokeObjectUrls();
     setStatus('idle');
     setEntries([]);
+    setProgress(0);
     setArchiveName('');
     setError('');
   }
@@ -94,7 +152,20 @@ export default function App() {
                 Cancel
               </Button>
             </div>
-            <Progress />
+            <div
+              className="h-2 overflow-hidden rounded-full bg-emerald-100"
+              role="progressbar"
+              aria-label="ZIP extraction progress"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progress}
+            >
+              <div
+                className="h-full rounded-full bg-emerald-600 transition-[width]"
+                style={{ width: `${progress}%` }}
+              />
+            </div>
+            <p className="mt-2 text-right text-xs tabular-nums text-stone-500">{progress}%</p>
           </section>
         )}
 
