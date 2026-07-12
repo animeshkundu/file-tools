@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="light" />
+  <meta name="description" content="File Tools — open and extract ZIP files entirely in your browser. Nothing is uploaded, tracked, or sent anywhere." />
+  <title>File Tools — Privacy-first file utilities for your browser</title>
+  <link rel="stylesheet" href="/file-tools/styles.css" />
+</head>
+<body>
+  <a class="skip-link" href="#main-content">Skip to main content</a>
+
+  <header class="site-header">
+    <a class="brand" href="/file-tools/" aria-label="File Tools home">FILE TOOLS</a>
+    <nav aria-label="Site">
+      <ul class="site-nav">
+        <li><a href="/file-tools/" aria-current="page">Home</a></li>
+        <li><a href="/file-tools/docs/">Docs</a></li>
+        <li><a href="https://github.com/animeshkundu/file-tools">Source</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <main id="main-content">
+    <div class="page-wrap">
+      <div class="container">
+
+        <header class="page-header">
+          <div>
+            <p class="eyebrow">FILE TOOLS</p>
+            <h1>Your files, handled on your device.</h1>
+            <p class="lede">
+              Open and explore ZIP archives entirely in your browser — no upload, no account, no
+              tracking. The Unzip tool runs all processing locally, offline, in an installed browser
+              extension.
+            </p>
+          </div>
+          <div class="pill-offline" aria-label="Works offline">100% offline</div>
+        </header>
+
+        <section aria-labelledby="flagship-heading">
+          <div class="card">
+            <h2 id="flagship-heading">Unzip — available now</h2>
+            <p>
+              Drop a ZIP file onto the extension page and browse its contents before downloading
+              anything. Entries are validated, path-checked, and extracted safely inside the
+              extension's sandboxed page — the archive never leaves your device.
+            </p>
+
+            <div class="feature-grid">
+              <div class="feature-item">
+                <div class="feature-icon" aria-hidden="true">↓</div>
+                <div class="feature-body">
+                  <strong>Browse before you download</strong>
+                  <span>See file names, sizes, and folder structure before extracting anything.</span>
+                </div>
+              </div>
+              <div class="feature-item">
+                <div class="feature-icon" aria-hidden="true">🔒</div>
+                <div class="feature-body">
+                  <strong>Local processing only</strong>
+                  <span>All ZIP parsing and extraction runs in the extension, never on a server.</span>
+                </div>
+              </div>
+              <div class="feature-item">
+                <div class="feature-icon" aria-hidden="true">⚡</div>
+                <div class="feature-body">
+                  <strong>Instant, no install friction</strong>
+                  <span>One click to open the extension page; drop a file to start immediately.</span>
+                </div>
+              </div>
+              <div class="feature-item">
+                <div class="feature-icon" aria-hidden="true">🌐</div>
+                <div class="feature-body">
+                  <strong>Chrome and Firefox</strong>
+                  <span>A single codebase ships to both browsers as a standard MV3 extension.</span>
+                </div>
+              </div>
+            </div>
+
+            <a class="btn-primary" href="https://github.com/animeshkundu/file-tools">
+              View on GitHub →
+            </a>
+          </div>
+        </section>
+
+        <section aria-labelledby="privacy-heading">
+          <div class="card">
+            <h2 id="privacy-heading">Privacy and capability contract</h2>
+            <p>
+              The following wording is the exact capability contract for this extension:
+            </p>
+            <blockquote class="contract-block">
+              Local processing, no upload; zero install-time permissions for the core; optional
+              <code>downloads</code> permission requested only for tree-preserving extract-all.
+            </blockquote>
+            <p>
+              This contract is backed by the extension's architecture — all heavy work runs in a Web
+              Worker inside the extension page, nothing is fetched from or sent to any remote host, and
+              the page CSP denies all external connections at the browser level. However, zero
+              manifest permissions alone do not prove privacy: the permission list tells you what the
+              browser would allow, not what the code does. Review the
+              <a href="https://github.com/animeshkundu/file-tools">source</a> and the built
+              manifests to verify the contract yourself.
+            </p>
+            <p>
+              The <em>extension</em> processes files locally and offline. The public Pages site you
+              are reading now is a regular web page served over HTTPS — visiting it uses your
+              network normally.
+            </p>
+
+            <h3>Permissions breakdown</h3>
+            <p>
+              The extension requests no install-time permissions. When you choose "Download all" to
+              save every extracted entry while preserving the original folder structure, the browser
+              prompts once for the optional <code>downloads</code> permission. You can decline and
+              still download individual files one at a time without any permission.
+            </p>
+          </div>
+        </section>
+
+        <section aria-labelledby="safety-heading">
+          <div class="card">
+            <h2 id="safety-heading">Safety boundaries</h2>
+            <p>
+              Every ZIP entry passes a set of safety checks before extraction begins:
+            </p>
+            <ul>
+              <li>Aggregate emitted bytes, entry count, path depth, and wall time are capped.</li>
+              <li>
+                Path traversal is rejected: entries with <code>..</code>, absolute paths, drive
+                letters, backslashes, NUL bytes, or Windows reserved names are refused.
+              </li>
+              <li>Declared sizes in the ZIP header are treated as untrusted hints.</li>
+              <li>Nested archives are not recursively extracted by default.</li>
+            </ul>
+            <p>
+              If a file exceeds the input size limit or fails any check, extraction stops cleanly
+              and reports the reason. No partial state is left behind.
+            </p>
+          </div>
+        </section>
+
+        <footer class="trust-chips" aria-label="Privacy summary">
+          <span>No uploads</span>
+          <span>No account</span>
+          <span>No permissions at install</span>
+          <span>No network from the extension</span>
+        </footer>
+
+      </div>
+    </div>
+  </main>
+
+  <footer class="site-footer">
+    <p>
+      <a href="/file-tools/">Home</a> ·
+      <a href="/file-tools/docs/">Docs</a> ·
+      <a href="https://github.com/animeshkundu/file-tools">Source on GitHub</a>
+    </p>
+  </footer>
+</body>
+</html>
