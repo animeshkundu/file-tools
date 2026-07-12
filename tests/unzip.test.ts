@@ -1,5 +1,6 @@
 import { strFromU8, strToU8, zipSync } from 'fflate';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { ArchiveSafetyError } from '../lib/core/safety';
 import { runUnzipWorker } from '../lib/core/worker';
 import { extractZip, extractZipFile } from '../lib/tools/unzip/extract';
 import {
@@ -21,6 +22,103 @@ function writeUint32(bytes: Uint8Array, offset: number, value: number): void {
   bytes[offset + 1] = (value >>> 8) & 0xff;
   bytes[offset + 2] = (value >>> 16) & 0xff;
   bytes[offset + 3] = (value >>> 24) & 0xff;
+}
+
+function writeUint16(bytes: Uint8Array, offset: number, value: number): void {
+  bytes[offset] = value & 0xff;
+  bytes[offset + 1] = (value >>> 8) & 0xff;
+}
+
+function readUint16(bytes: Uint8Array, offset: number): number {
+  return bytes[offset]! | (bytes[offset + 1]! << 8);
+}
+
+function readUint32(bytes: Uint8Array, offset: number): number {
+  return (
+    (bytes[offset]! |
+      (bytes[offset + 1]! << 8) |
+      (bytes[offset + 2]! << 16) |
+      (bytes[offset + 3]! << 24)) >>>
+    0
+  );
+}
+
+function findSignature(bytes: Uint8Array, signature: number): number {
+  for (let offset = 0; offset <= bytes.length - 4; offset += 1) {
+    if (readUint32(bytes, offset) === signature) return offset;
+  }
+  throw new Error('ZIP structure is missing an expected signature.');
+}
+
+function crc32(bytes: Uint8Array): number {
+  let crc = 0xffffffff;
+  for (const byte of bytes) {
+    crc ^= byte;
+    for (let bit = 0; bit < 8; bit += 1) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
+    }
+  }
+  return (crc ^ 0xffffffff) >>> 0;
+}
+
+function makeRogueLocalRecordArchive(): Uint8Array {
+  const valid = zipSync({ 'a.txt': strToU8('a') });
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  const name = strToU8('a.txt');
+  const payload = strToU8('x');
+  const rogue = new Uint8Array(30 + name.byteLength + payload.byteLength);
+  writeUint32(rogue, 0, 0x04034b50);
+  writeUint16(rogue, 4, 20);
+  writeUint16(rogue, 8, 0);
+  writeUint32(rogue, 14, crc32(payload));
+  writeUint32(rogue, 18, payload.byteLength);
+  writeUint32(rogue, 22, 0x20000000);
+  writeUint16(rogue, 26, name.byteLength);
+  rogue.set(name, 30);
+  rogue.set(payload, 30 + name.byteLength);
+
+  const archive = new Uint8Array(rogue.byteLength + valid.byteLength);
+  archive.set(rogue);
+  archive.set(valid, rogue.byteLength);
+  writeUint32(
+    archive,
+    rogue.byteLength + central + 42,
+    rogue.byteLength + readUint32(valid, central + 42),
+  );
+  writeUint32(
+    archive,
+    rogue.byteLength + eocd + 16,
+    rogue.byteLength + readUint32(valid, eocd + 16),
+  );
+  return archive;
+}
+
+function makeZipSlipArchive(): Uint8Array {
+  const archive = zipSync({ 'aa/evil.txt': strToU8('x') });
+  const replacement = strToU8('../evil.txt');
+  const local = findSignature(archive, 0x04034b50);
+  const central = findSignature(archive, 0x02014b50);
+  archive.set(replacement, local + 30);
+  archive.set(replacement, central + 46);
+  return archive;
+}
+
+function makeForgedHostSymlinkArchive(): Uint8Array {
+  const archive = zipSync({ 'link.txt': strToU8('target') });
+  const central = findSignature(archive, 0x02014b50);
+  archive[central + 5] = 0;
+  writeUint32(archive, central + 38, (0o120777 << 16) >>> 0);
+  return archive;
+}
+
+function makeCrcCorruptArchive(): Uint8Array {
+  const archive = zipSync({ 'a.txt': strToU8('a') }, { level: 0 });
+  const local = findSignature(archive, 0x04034b50);
+  const payloadOffset =
+    local + 30 + readUint16(archive, local + 26) + readUint16(archive, local + 28);
+  archive[payloadOffset] ^= 0xff;
+  return archive;
 }
 
 function patchDeclaredUncompressedSizes(archive: Uint8Array, size: number): Uint8Array {
@@ -107,6 +205,50 @@ describe('extractZip', () => {
         ([start = 0, end = file.size]) => Number(end) - Number(start) <= ARCHIVE_READ_CHUNK_BYTES,
       ),
     ).toBe(true);
+  });
+
+  it('rejects a rogue local record without allocating its declared size', async () => {
+    const archive = makeRogueLocalRecordArchive();
+    const NativeUint8Array = Uint8Array;
+    let attemptedOversizedAllocation = false;
+    vi.stubGlobal(
+      'Uint8Array',
+      new Proxy(NativeUint8Array, {
+        construct(target, argumentsList, newTarget) {
+          if (argumentsList[0] === 0x20000000) {
+            attemptedOversizedAllocation = true;
+            throw new Error('Oversized allocation attempted.');
+          }
+          return Reflect.construct(target, argumentsList, newTarget);
+        },
+      }),
+    );
+    const onEntry = vi.fn();
+
+    expect(() => extractZip(archive, { maxEntryBytes: 1n })).toThrow(ArchiveSafetyError);
+    await expect(
+      extractZipFile(
+        new File([archive.buffer as ArrayBuffer], 'rogue.zip'),
+        { onEntry },
+        { maxEntryBytes: 1n },
+      ),
+    ).rejects.toBeInstanceOf(ArchiveSafetyError);
+    expect(attemptedOversizedAllocation).toBe(false);
+    expect(onEntry).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['ZIP-Slip path', makeZipSlipArchive],
+    ['forged-host symlink', makeForgedHostSymlinkArchive],
+    ['truncated structure', () => zipSync({ 'a.txt': strToU8('a') }).slice(0, -1)],
+    ['CRC corruption', makeCrcCorruptArchive],
+  ])('rejects raw %s through file extraction', async (_name, makeArchive) => {
+    const onEntry = vi.fn();
+    const archive = makeArchive();
+    await expect(
+      extractZipFile(new File([archive.buffer as ArrayBuffer], 'malicious.zip'), { onEntry }),
+    ).rejects.toBeInstanceOf(ArchiveSafetyError);
+    expect(onEntry).not.toHaveBeenCalled();
   });
 });
 

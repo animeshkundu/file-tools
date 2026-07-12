@@ -55,21 +55,14 @@ function readUint32(bytes: Uint8Array, offset: number): number {
   );
 }
 
-function classifyEntryKind(
-  name: string,
-  versionMadeBy: number,
-  externalAttributes: number,
-): ArchiveEntryKind {
+function classifyEntryKind(name: string, externalAttributes: number): ArchiveEntryKind {
   if (name.endsWith('/')) return 'directory';
 
-  const madeBySystem = versionMadeBy >>> 8;
-  if (madeBySystem === 3) {
-    const mode = (externalAttributes >>> 16) & 0xffff;
-    const type = mode & 0o170000;
-    if (type === 0o120000) return 'symlink';
-    if (type === 0o040000) return 'directory';
-    if (type !== 0 && type !== 0o100000) return 'special';
-  }
+  const mode = (externalAttributes >>> 16) & 0xffff;
+  const type = mode & 0o170000;
+  if (type === 0o120000) return 'symlink';
+  if (type === 0o040000) return 'directory';
+  if (type !== 0 && type !== 0o100000) return 'special';
 
   return 'file';
 }
@@ -114,7 +107,6 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryEntry
       throw new ArchiveSafetyError('Archive central directory has an invalid record.');
     }
 
-    const versionMadeBy = readUint16(archive, offset + 4);
     const flags = readUint16(archive, offset + 8);
     const compression = readUint16(archive, offset + 10);
     const crc32 = readUint32(archive, offset + 16);
@@ -135,7 +127,7 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryEntry
     const name = UTF_8.decode(nameBytes);
     entries.push({
       name,
-      kind: classifyEntryKind(name, versionMadeBy, externalAttributes),
+      kind: classifyEntryKind(name, externalAttributes),
       hasDataDescriptor: (flags & 0x0008) !== 0,
       compression,
       crc32,
@@ -254,6 +246,17 @@ function assertEntryChunkWithinLimit(
   return nextSize;
 }
 
+function joinEntryChunks(chunks: Uint8Array[], size: number): Uint8Array {
+  const output = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    output.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  chunks.length = 0;
+  return output;
+}
+
 export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): ExtractedEntry[] {
   const { limits, maxEntryBytes } = splitLimits(options);
   const budget = new ArchiveSafetyBudget({ ...DEFAULT_ARCHIVE_LIMITS, ...limits });
@@ -273,7 +276,6 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
     }
 
     const path = budget.addEntry(file.name, centralEntry.kind);
-    const declaredSize = file.originalSize ?? centralEntry.uncompressedSize;
     if (centralEntry.kind === 'directory') {
       file.ondata = (error, chunk) => {
         if (error) {
@@ -291,7 +293,7 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
 
     let crc = 0xffffffff;
     let size = 0;
-    const output = new Uint8Array(declaredSize);
+    const chunks: Uint8Array[] = [];
     file.ondata = (error, chunk, final) => {
       if (error) {
         throw new ArchiveSafetyError(
@@ -299,23 +301,21 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
         );
       }
       const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, maxEntryBytes);
-      if (nextSize > output.byteLength) {
-        throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
-      }
       budget.addEmittedBytes(chunk.byteLength);
       if (chunk.byteLength > 0) {
-        output.set(chunk, size);
+        chunks.push(chunk);
         crc = updateCrc32(crc, chunk);
       }
       size = nextSize;
       if (final) {
-        if (size !== output.byteLength) {
+        if (size !== centralEntry.uncompressedSize) {
           throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
         }
         const actualCrc32 = (crc ^ 0xffffffff) >>> 0;
         if (actualCrc32 !== centralEntry.crc32) {
           throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${path}`);
         }
+        const output = joinEntryChunks(chunks, size);
         entries.push({ path, bytes: output, size });
       }
     };
@@ -403,7 +403,7 @@ async function readCentralDirectoryEntriesFromFile(
     }
     entries.push({
       name,
-      kind: classifyEntryKind(name, readUint16(fixed, 4), readUint32(fixed, 38)),
+      kind: classifyEntryKind(name, readUint32(fixed, 38)),
       hasDataDescriptor: (readUint16(fixed, 8) & 0x0008) !== 0,
       compression: readUint16(fixed, 10),
       crc32: readUint32(fixed, 16),
@@ -490,7 +490,6 @@ export async function extractZipFile(
       throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
     const path = budget.addEntry(archiveEntry.name, centralEntry.kind);
-    const declaredSize = archiveEntry.originalSize ?? centralEntry.uncompressedSize;
     if (centralEntry.kind === 'directory') {
       activeEntry = true;
       archiveEntry.ondata = (error, chunk, final) => {
@@ -509,7 +508,7 @@ export async function extractZipFile(
     }
 
     activeEntry = true;
-    const output = new Uint8Array(declaredSize);
+    const chunks: Uint8Array[] = [];
     let crc = 0xffffffff;
     let size = 0;
     archiveEntry.ondata = (error, chunk, final) => {
@@ -519,17 +518,14 @@ export async function extractZipFile(
         );
       }
       const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, maxEntryBytes);
-      if (nextSize > output.byteLength) {
-        throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
-      }
       budget.addEmittedBytes(chunk.byteLength);
       if (chunk.byteLength > 0) {
-        output.set(chunk, size);
+        chunks.push(chunk);
         crc = updateCrc32(crc, chunk);
       }
       size = nextSize;
       if (!final) return;
-      if (size !== output.byteLength) {
+      if (size !== centralEntry.uncompressedSize) {
         throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
       }
       if ((crc ^ 0xffffffff) >>> 0 !== centralEntry.crc32) {
@@ -537,6 +533,7 @@ export async function extractZipFile(
       }
       totalBytes += size;
       activeEntry = false;
+      const output = joinEntryChunks(chunks, size);
       callbacks.onEntry({ path, bytes: output, size });
     };
     archiveEntry.start();
