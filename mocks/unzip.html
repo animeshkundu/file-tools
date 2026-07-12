@@ -1,0 +1,277 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="color-scheme" content="light" />
+<title>File Tools - Unzip</title>
+<style>
+  :root {
+    --stone-50: #fafaf9; --stone-100: #f5f5f4; --stone-200: #e7e5e4; --stone-300: #d6d3d1;
+    --stone-400: #a8a29e; --stone-500: #78716c; --stone-600: #57534e; --stone-700: #44403c;
+    --stone-800: #292524; --stone-900: #1c1917; --stone-950: #0c0a09;
+    --emerald-50: #ecfdf5; --emerald-100: #d1fae5; --emerald-200: #a7f3d0; --emerald-300: #6ee7b7;
+    --emerald-500: #10b981; --emerald-600: #059669; --emerald-700: #047857; --emerald-800: #065f46;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    min-width: 320px;
+    min-height: 100vh;
+    color: #172217;
+    font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+    font-synthesis: none;
+    background: radial-gradient(circle at top left, #e5f5e7, transparent 35%), #f8faf6;
+  }
+  main { padding: 2.5rem 1.25rem; }
+  .container { max-width: 56rem; margin: 0 auto; }
+  header.page-header {
+    margin-bottom: 2.5rem;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1.5rem;
+  }
+  .eyebrow {
+    margin: 0 0 0.5rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    letter-spacing: 0.025em;
+    color: var(--emerald-700);
+  }
+  h1 {
+    margin: 0;
+    font-size: 2.25rem;
+    font-weight: 700;
+    letter-spacing: -0.025em;
+    color: var(--stone-950);
+    line-height: 1.1;
+  }
+  @media (min-width: 640px) { h1 { font-size: 3rem; } }
+  .lede {
+    margin: 0.75rem 0 0;
+    max-width: 36rem;
+    font-size: 1rem;
+    line-height: 1.75rem;
+    color: var(--stone-600);
+  }
+  .pill-offline {
+    display: none;
+    align-items: center;
+    white-space: nowrap;
+    border-radius: 9999px;
+    border: 1px solid var(--emerald-200);
+    background: #fff;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--emerald-800);
+  }
+  @media (min-width: 640px) { .pill-offline { display: inline-flex; } }
+
+  .btn {
+    border-radius: 0.75rem;
+    padding: 0.625rem 1rem;
+    font-size: 0.875rem;
+    font-weight: 600;
+    border: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+    font-family: inherit;
+  }
+  .btn-primary { background: var(--emerald-700); color: #fff; }
+  .btn-primary:hover { background: var(--emerald-800); }
+  .btn-secondary { background: #fff; color: var(--stone-800); border: 1px solid var(--stone-300); }
+  .btn-secondary:hover { background: var(--stone-50); }
+
+  .result-header {
+    margin-bottom: 1.25rem;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+  .archive-name { margin: 0; font-size: 0.875rem; color: var(--stone-500); }
+  .archive-count { margin: 0.25rem 0 0; font-size: 1.5rem; font-weight: 700; color: var(--stone-950); }
+  .result-actions { display: flex; gap: 0.5rem; }
+
+  .filetree {
+    overflow: hidden;
+    border-radius: 1rem;
+    border: 1px solid var(--stone-200);
+    background: #fff;
+  }
+  .filetree-header {
+    display: grid;
+    grid-template-columns: 1fr auto auto;
+    gap: 1rem;
+    border-bottom: 1px solid var(--stone-200);
+    background: var(--stone-50);
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--stone-500);
+  }
+  .filetree-body {
+    max-height: 24rem;
+    overflow-y: auto;
+  }
+  .filetree-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.75rem 1rem;
+    border-top: 1px solid var(--stone-100);
+  }
+  .filetree-row:first-child { border-top: none; }
+  .file-path {
+    font-size: 0.875rem;
+    color: var(--stone-800);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .file-size {
+    font-size: 0.75rem;
+    color: var(--stone-500);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+  .helper-caption {
+    margin: 1rem 0 0;
+    text-align: center;
+    font-size: 0.75rem;
+    color: var(--stone-500);
+  }
+
+  footer.trust-chips {
+    margin-top: 3rem;
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: center;
+    gap: 0.5rem 1.5rem;
+    font-size: 0.75rem;
+    color: var(--stone-500);
+  }
+
+  a { color: inherit; }
+  button:focus-visible, a:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--emerald-700);
+    outline-offset: 2px;
+  }
+</style>
+</head>
+<body>
+<main>
+  <div class="container">
+    <header class="page-header">
+      <div>
+        <p class="eyebrow">FILE TOOLS</p>
+        <h1>Unzip, privately.</h1>
+        <p class="lede">
+          Open ZIP files entirely on your device. Nothing is uploaded, tracked, or sent anywhere.
+        </p>
+      </div>
+      <div class="pill-offline">100% offline</div>
+    </header>
+
+    <section>
+      <div class="result-header">
+        <div>
+          <p class="archive-name">portfolio-site-export.zip</p>
+          <h2 class="archive-count">12 files &middot; 4.3 MB</h2>
+        </div>
+        <div class="result-actions">
+          <button class="btn btn-secondary">Open another</button>
+          <button class="btn btn-primary">Download all</button>
+        </div>
+      </div>
+
+      <div class="filetree">
+        <div class="filetree-header">
+          <span>File</span>
+          <span>Size</span>
+          <span style="position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);">Action</span>
+        </div>
+        <div class="filetree-body">
+          <div class="filetree-row">
+            <span class="file-path" title="site/index.html">site/index.html</span>
+            <span class="file-size">14 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/styles.css">site/styles.css</span>
+            <span class="file-size">8.6 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/scripts/app.js">site/scripts/app.js</span>
+            <span class="file-size">42 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/scripts/vendor/chart-library-minified.production.bundle.with-source-maps-and-polyfills.js">site/scripts/vendor/chart-library-minified.production.bundle.with-source-maps-and-polyfills.js</span>
+            <span class="file-size">210 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/images/hero-banner.jpg">site/images/hero-banner.jpg</span>
+            <span class="file-size">2.1 MB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/images/logo.svg">site/images/logo.svg</span>
+            <span class="file-size">3.4 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/images/icons/download.svg">site/images/icons/download.svg</span>
+            <span class="file-size">1.2 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/images/icons/upload.svg">site/images/icons/upload.svg</span>
+            <span class="file-size">1.1 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/data/products.json">site/data/products.json</span>
+            <span class="file-size">96 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/data/customers.json">site/data/customers.json</span>
+            <span class="file-size">1.8 MB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/README.md">site/README.md</span>
+            <span class="file-size">3.2 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+          <div class="filetree-row">
+            <span class="file-path" title="site/LICENSE">site/LICENSE</span>
+            <span class="file-size">1.1 KB</span>
+            <button class="btn btn-secondary">Download</button>
+          </div>
+        </div>
+      </div>
+      <p class="helper-caption">
+        Download all creates a safe, fresh ZIP that preserves folder names on Chrome and Firefox.
+      </p>
+    </section>
+
+    <footer class="trust-chips">
+      <span>No uploads</span>
+      <span>No account</span>
+      <span>No permissions</span>
+      <span>No network</span>
+    </footer>
+  </div>
+</main>
+</body>
+</html>
