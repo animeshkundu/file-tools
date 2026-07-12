@@ -23,8 +23,11 @@ tool-picker home, a batch/multi-file view, and settings with the Pro unlock.
   sidebar, or toolbar competing for attention.
 - **Keyboard-first.** Every interactive surface (dropzone, buttons, file rows) is reachable and
   operable by keyboard alone, with visible focus states. See section 5.
-- **Minimal motion.** The only animation shipped is the progress-bar pulse during extraction, and
-  it respects `prefers-reduced-motion`. Nothing else moves.
+- **Minimal motion.** The only animation in the system is the progress-bar pulse during
+  extraction. Nothing else moves. The mocks wrap that pulse in
+  `@media (prefers-reduced-motion: reduce)`; that guard is not yet present on the shipped
+  `Progress` component (Tailwind's `animate-pulse` utility has no built-in reduced-motion
+  handling), noted as a small follow-up in section 6.
 
 ## 2. Design system
 
@@ -67,13 +70,15 @@ Emerald scale in full: 50 `#ecfdf5`, 100 `#d1fae5`, 200 `#a7f3d0`, 300 `#6ee7b7`
 
 ### 2.2 Type
 
-Font stack: `Inter, ui-sans-serif, system-ui, sans-serif`. No webfont is loaded for the mocks;
-the shipped app pulls Inter through the Tailwind theme, but the fallback stack alone is close
-enough that the mocks stay fully self-contained and render offline.
+Font stack: `Inter, ui-sans-serif, system-ui, sans-serif`. This is declared as the Tailwind
+theme's `--font-sans`, but no `@font-face` or webfont file is loaded anywhere in the shipped code,
+so Inter only renders if the visiting OS happens to have it installed; otherwise every screen
+already falls back to the system UI font. The mocks rely on that same fallback stack directly and
+load no webfont either, so they stay fully self-contained and render offline.
 
 | Use | Size / weight | Color |
 | --- | --- | --- |
-| Eyebrow label ("FILE TOOLS") | text-sm/xs, font-semibold, tracking-wide, uppercase | emerald-700 |
+| Eyebrow label ("FILE TOOLS") | text-sm, font-semibold, tracking-wide (the label text itself is typed in caps, there is no `uppercase` transform) | emerald-700 |
 | H1 | text-4xl → text-5xl at `sm`, font-bold, tracking-tight | stone-950 |
 | Intro / lede paragraph | text-base, leading-7 | stone-600 |
 | Section heading (H2) | text-2xl or text-xl, font-bold/semibold | stone-950 |
@@ -166,8 +171,9 @@ toggle. The Pro card explains the one-time unlock model: a short tagline, a plai
 what Pro adds (RAR/7z, batch extract, encrypted-ZIP creation, save-to-folder), an "Unlock Pro"
 primary button, an "Import license file" secondary button for the offline-license path, an
 honest disclosure line that purchasing happens on an external store page while the app itself
-never phones home, and a low-emphasis "Buy me a coffee" link styled as a text link rather than a
-button so it never competes with the real actions.
+never phones home, and a low-emphasis "Buy me a coffee" link styled with the same secondary
+button treatment as the rest of the system (white background, stone-300 border) so it reads as a
+real, optional action rather than a full-weight competing button.
 
 ## 4. State coverage for the flagship flow
 
@@ -189,7 +195,12 @@ pictured in the current mock, called out as an open item below).
 - Every button, link, and the dropzone gets a visible focus ring (`outline: 2px solid emerald-700`
   with a small offset) rather than relying on the browser default or removing it.
 - The dropzone is a real `role="button"` with `tabIndex`, and Enter/Space activate it exactly
-  like a click; the hidden file input stays reachable for assistive tech.
+  like a click. The underlying `<input type="file">` stays `display: none` and out of the tab
+  order on purpose (it is never meant to receive focus directly); the wrapping div carries all of
+  the interactive semantics and forwards activation to the input via ref.
+- Home's tool cards and the settings toggles are real `<a>` and `<button>` elements rather than
+  styled `<div>`/`<span>`, so they land in the tab order and carry their native semantics for free
+  instead of needing hand-rolled keyboard handling.
 - FileTree's action column has a screen-reader-only "Action" label since the visible header only
   needs File/Size; each row's Download button already carries the accessible name it needs
   ("Download") because it sits next to the filename in reading order.
@@ -197,8 +208,10 @@ pictured in the current mock, called out as an open item below).
   `aria-label`, so their state is announced without relying on color alone.
 - Tab order follows visual order top to bottom, left to right on every screen: header content
   first, then primary content, then footer chips last (chips are not interactive).
-- The only animation shipped (the progress-bar pulse) is wrapped in
-  `@media (prefers-reduced-motion: reduce)` and disabled entirely for users who ask for it.
+- The only animation in the system (the progress-bar pulse) is wrapped in
+  `@media (prefers-reduced-motion: reduce)` in the mocks' CSS and disabled entirely for users who
+  ask for it. The shipped `Progress` component does not yet carry that guard (see section 6);
+  the mocks show the intended end state.
 - `body { min-width: 320px; }` is a hard floor carried from the shipped app; the mocks keep the
   same floor and reflow the header (offline pill hides below `640px`, wrapping the tool grid down
   to one column) rather than truncating content.
@@ -233,3 +246,7 @@ Smaller open items:
 - The Pro "size-limit" control in the settings mock is illustrated as a plain `<select>`; whether
   the shipped implementation uses a select, a slider, or stepped buttons is an implementation
   decision, not a visual one, and can be made later without touching the token set.
+- The shipped `components/Progress.tsx` uses Tailwind's `animate-pulse` utility, which has no
+  built-in `prefers-reduced-motion` handling. The mocks demonstrate wrapping that animation in a
+  reduced-motion media query; carrying the same guard back into the shipped component is a small,
+  low-risk follow-up rather than a design change.
