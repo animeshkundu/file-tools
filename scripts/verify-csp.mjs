@@ -24,9 +24,9 @@ function parsePolicy(policy) {
       throw new Error('CSP contains a non-ASCII character');
     }
 
-    const isControl = codePoint < 32 || codePoint === 127;
+    const isAsciiControl = codePoint < 32 || codePoint === 127;
 
-    if (isControl && !ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
+    if (isAsciiControl && !ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
       throw new Error('CSP contains a disallowed ASCII control character');
     }
   }
