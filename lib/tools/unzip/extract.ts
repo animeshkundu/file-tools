@@ -237,7 +237,7 @@ function splitLimits(options: ExtractOptions): {
 } {
   const { maxEntryBytes = MAX_ENTRY_OUTPUT_BYTES, ...limits } = options;
   if (maxEntryBytes < 0n) {
-    throw new ArchiveSafetyError('Per-entry extraction limit is invalid.');
+    throw new ArchiveSafetyError('Per-entry extraction limit must be non-negative.');
   }
   return { limits, maxEntryBytes };
 }

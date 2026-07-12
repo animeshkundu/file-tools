@@ -26,10 +26,10 @@ export function runUnzipWorker(
   });
   let settled = false;
   let rejectPromise: (reason: Error) => void = () => undefined;
-  let timeout: ReturnType<typeof setTimeout>;
+  let timeoutHandle: ReturnType<typeof setTimeout>;
 
   const cleanup = () => {
-    globalThis.clearTimeout(timeout);
+    globalThis.clearTimeout(timeoutHandle);
     worker.onmessage = null;
     worker.onerror = null;
     worker.terminate();
@@ -37,7 +37,7 @@ export function runUnzipWorker(
 
   const promise = new Promise<{ type: 'complete'; totalBytes: number }>((resolve, reject) => {
     rejectPromise = reject;
-    timeout = globalThis.setTimeout(() => {
+    timeoutHandle = globalThis.setTimeout(() => {
       if (settled) return;
       settled = true;
       cleanup();

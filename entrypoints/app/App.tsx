@@ -8,6 +8,7 @@ import { runUnzipWorker, type WorkerController } from '../../lib/core/worker';
 import { assertArchiveInputSize, type ExtractedEntry } from '../../lib/tools/unzip/types';
 
 type Status = 'idle' | 'extracting' | 'ready' | 'error';
+const DOWNLOAD_CLEANUP_DELAY_MS = 1_000;
 
 export default function App() {
   const [status, setStatus] = useState<Status>('idle');
@@ -92,7 +93,7 @@ export default function App() {
     window.setTimeout(() => {
       URL.revokeObjectURL(url);
       objectUrlsRef.current.delete(url);
-    }, 1_000);
+    }, DOWNLOAD_CLEANUP_DELAY_MS);
   }
 
   function downloadEntry(entry: ExtractedEntry) {

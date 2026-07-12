@@ -10,6 +10,12 @@ import {
   type UnzipWorkerResponse,
 } from '../lib/tools/unzip/types';
 
+afterEach(() => {
+  vi.useRealTimers();
+  vi.unstubAllGlobals();
+  FakeWorker.instances = [];
+});
+
 function writeUint32(bytes: Uint8Array, offset: number, value: number): void {
   bytes[offset] = value & 0xff;
   bytes[offset + 1] = (value >>> 8) & 0xff;
@@ -112,7 +118,6 @@ describe('archive input boundary', () => {
     const oversized = { size: MAX_ARCHIVE_INPUT_BYTES + 1 } as File;
     expect(() => runUnzipWorker(oversized)).toThrow(/256 MB/u);
     expect(FakeWorker.instances).toHaveLength(0);
-    vi.unstubAllGlobals();
   });
 });
 
@@ -141,12 +146,6 @@ class FakeWorker {
 }
 
 describe('runUnzipWorker', () => {
-  afterEach(() => {
-    vi.useRealTimers();
-    vi.unstubAllGlobals();
-    FakeWorker.instances = [];
-  });
-
   it('passes the File directly, reports progress and entries, then cleans up', async () => {
     vi.stubGlobal('Worker', FakeWorker);
     const clearTimeout = vi.spyOn(globalThis, 'clearTimeout');
