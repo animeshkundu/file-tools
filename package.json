@@ -13,6 +13,7 @@
     "zip:firefox": "wxt zip -b firefox",
     "compile": "tsc --noEmit",
     "test": "vitest run",
+    "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier -w .",
@@ -28,6 +29,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.39.2",
+    "@playwright/test": "^1.61.1",
     "@tailwindcss/vite": "^4.1.18",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
