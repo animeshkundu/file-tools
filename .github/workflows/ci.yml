@@ -45,4 +45,5 @@ jobs:
         with:
           name: file-tools-builds
           path: .output/
+          include-hidden-files: true
           if-no-files-found: error
