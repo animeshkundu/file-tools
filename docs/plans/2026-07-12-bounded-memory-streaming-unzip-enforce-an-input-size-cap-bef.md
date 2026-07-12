@@ -24,7 +24,7 @@ release, CSP/CI/Pages work, or unrelated safety changes.
       entry delivery, terminal completion/error, and cancellation.
 - [ ] In `App.tsx`, reject unsupported or oversized input before constructing a worker. Track
       determinate progress, ignore stale operation events, cancel during reset/replacement/unmount,
-      and release all operation-owned buffers or URLs on success replacement, error, timeout, and
+      and release all operation-owned buffers or URLs on success, replacement, error, timeout, and
       cancellation while preserving the shipped warm-neutral emerald UI.
 - [ ] Refactor `runUnzipWorker` into a single-settlement controller. Post the `File` without a
       transfer list, forward progress/entry events, clear the timeout on every terminal path,

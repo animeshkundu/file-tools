@@ -66,6 +66,8 @@ uncompressed sizes.
 
 ## Sources
 
+Line references below reflect the repository state on 2026-07-12.
+
 - `CLAUDE.md:53-59`
 - `docs/ARCHITECTURE.md:118-169`
 - `docs/PEER-REVIEW.md:15`
