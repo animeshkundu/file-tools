@@ -11,6 +11,8 @@ import {
   type UnzipWorkerResponse,
 } from '../lib/tools/unzip/types';
 
+const ROGUE_DECLARED_SIZE = 0x20000000;
+
 afterEach(() => {
   vi.useRealTimers();
   vi.unstubAllGlobals();
@@ -73,7 +75,7 @@ function makeRogueLocalRecordArchive(): Uint8Array {
   writeUint16(rogue, 8, 0);
   writeUint32(rogue, 14, crc32(payload));
   writeUint32(rogue, 18, payload.byteLength);
-  writeUint32(rogue, 22, 0x20000000);
+  writeUint32(rogue, 22, ROGUE_DECLARED_SIZE);
   writeUint16(rogue, 26, name.byteLength);
   rogue.set(name, 30);
   rogue.set(payload, 30 + name.byteLength);
@@ -215,7 +217,7 @@ describe('extractZip', () => {
       'Uint8Array',
       new Proxy(NativeUint8Array, {
         construct(target, argumentsList, newTarget) {
-          if (argumentsList[0] === 0x20000000) {
+          if (argumentsList[0] === ROGUE_DECLARED_SIZE) {
             attemptedOversizedAllocation = true;
             throw new Error('Oversized allocation attempted.');
           }
