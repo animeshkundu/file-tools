@@ -12,6 +12,17 @@ const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const EOCD_SIGNATURE = 0x06054b50;
 const UTF_8 = new TextDecoder();
+const CRC32_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let index = 0; index < table.length; index += 1) {
+    let value = index;
+    for (let bit = 0; bit < 8; bit += 1) {
+      value = (value >>> 1) ^ (value & 1 ? 0xedb88320 : 0);
+    }
+    table[index] = value >>> 0;
+  }
+  return table;
+})();
 
 type CentralDirectoryEntry = {
   name: string;
@@ -189,26 +200,24 @@ function validateLocalHeaderMatchesCentral(
   }
 }
 
-function buildCentralDirectoryIndex(archive: Uint8Array): Map<string, CentralDirectoryEntry[]> {
+function buildCentralDirectoryIndex(archive: Uint8Array): Map<string, CentralDirectoryEntry> {
   const entries = readCentralDirectoryEntries(archive);
   for (const entry of entries) {
     validateLocalHeaderMatchesCentral(archive, entry);
   }
-  const index = new Map<string, CentralDirectoryEntry[]>();
+  const index = new Map<string, CentralDirectoryEntry>();
   for (const entry of entries) {
-    const existing = index.get(entry.name);
-    if (existing) existing.push(entry);
-    else index.set(entry.name, [entry]);
+    if (index.has(entry.name)) {
+      throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
+    }
+    index.set(entry.name, entry);
   }
   return index;
 }
 
 function updateCrc32(crc: number, chunk: Uint8Array): number {
   for (const byte of chunk) {
-    crc ^= byte;
-    for (let bit = 0; bit < 8; bit += 1) {
-      crc = (crc >>> 1) ^ (crc & 1 ? 0xedb88320 : 0);
-    }
+    crc = (crc >>> 8) ^ CRC32_TABLE[(crc ^ byte) & 0xff]!;
   }
   return crc >>> 0;
 }
@@ -231,9 +240,8 @@ export function extractZip(
   const entries: ExtractedEntry[] = [];
   const centralEntriesByName = buildCentralDirectoryIndex(archive);
   const unzipper = new Unzip((file) => {
-    const centralEntries = centralEntriesByName.get(file.name);
-    const centralEntry = centralEntries?.shift();
-    if (centralEntries?.length === 0) centralEntriesByName.delete(file.name);
+    const centralEntry = centralEntriesByName.get(file.name);
+    if (centralEntry) centralEntriesByName.delete(file.name);
     if (!centralEntry) {
       throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
