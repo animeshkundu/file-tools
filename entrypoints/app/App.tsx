@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { downloadZip } from 'client-zip';
 import { Button } from '../../components/Button';
 import { FileTree } from '../../components/FileTree';
+import { Progress } from '../../components/Progress';
 import { Dropzone } from '../../lib/core/dropzone';
 import { formatBytes } from '../../lib/core/format';
 import { runUnzipWorker, type WorkerController } from '../../lib/core/worker';
@@ -19,6 +20,11 @@ export default function App() {
   const controllerRef = useRef<WorkerController | null>(null);
   const operationRef = useRef(0);
   const objectUrlsRef = useRef(new Set<string>());
+  const dropzoneRef = useRef<HTMLDivElement>(null);
+  const previousStatusRef = useRef<Status | null>(null);
+  const extractingHeadingRef = useRef<HTMLHeadingElement>(null);
+  const readyHeadingRef = useRef<HTMLHeadingElement>(null);
+  const errorHeadingRef = useRef<HTMLHeadingElement>(null);
 
   function revokeObjectUrls() {
     for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
@@ -34,6 +40,19 @@ export default function App() {
     },
     [],
   );
+
+  useEffect(() => {
+    const previousStatus = previousStatusRef.current;
+
+    if (status === 'extracting') extractingHeadingRef.current?.focus();
+    if (status === 'ready') readyHeadingRef.current?.focus();
+    if (status === 'error') errorHeadingRef.current?.focus();
+    if (status === 'idle' && previousStatus !== null && previousStatus !== 'idle') {
+      dropzoneRef.current?.focus();
+    }
+
+    previousStatusRef.current = status;
+  }, [status]);
 
   async function openArchive(file: File) {
     if (!file.name.toLowerCase().endsWith('.zip')) {
@@ -119,10 +138,21 @@ export default function App() {
   }
 
   const totalBytes = entries.reduce((total, entry) => total + entry.size, 0);
+  const liveMessage =
+    status === 'extracting'
+      ? `Extracting ${archiveName}`
+      : status === 'ready'
+        ? 'Extraction complete. Files are ready to download.'
+        : status === 'error'
+          ? `Extraction failed. ${error}`
+          : '';
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#e5f5e7,transparent_35%),#f8faf6] px-5 py-10">
       <div className="mx-auto max-w-4xl">
+        <div className="sr-only" aria-live="polite" aria-atomic="true">
+          {liveMessage}
+        </div>
         <header className="mb-10 flex items-start justify-between gap-6">
           <div>
             <p className="mb-2 text-sm font-semibold tracking-wide text-emerald-700">FILE TOOLS</p>
@@ -139,39 +169,37 @@ export default function App() {
           </div>
         </header>
 
-        {status === 'idle' && <Dropzone onFile={openArchive} />}
+        {status === 'idle' && <Dropzone ref={dropzoneRef} onFile={openArchive} />}
 
         {status === 'extracting' && (
           <section className="rounded-3xl border border-stone-200 bg-white p-8 shadow-sm">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
-                <p className="font-semibold text-stone-900">Opening {archiveName}</p>
+                <h2
+                  ref={extractingHeadingRef}
+                  tabIndex={-1}
+                  className="font-semibold text-stone-900"
+                >
+                  Opening {archiveName}
+                </h2>
                 <p className="mt-1 text-sm text-stone-500">Validating and extracting safely…</p>
               </div>
               <Button secondary onClick={() => controllerRef.current?.cancel()}>
                 Cancel
               </Button>
             </div>
-            <div
-              className="h-2 overflow-hidden rounded-full bg-emerald-100"
-              role="progressbar"
-              aria-label="ZIP extraction progress"
-              aria-valuemin={0}
-              aria-valuemax={100}
-              aria-valuenow={progress}
-            >
-              <div
-                className="h-full rounded-full bg-emerald-600 transition-[width]"
-                style={{ width: `${progress}%` }}
-              />
-            </div>
-            <p className="mt-2 text-right text-xs tabular-nums text-stone-500">{progress}%</p>
+            <Progress value={progress} />
+            <p className="mt-2 text-right text-xs tabular-nums text-stone-500" aria-hidden="true">
+              {progress}%
+            </p>
           </section>
         )}
 
         {status === 'error' && (
           <section className="rounded-3xl border border-red-200 bg-red-50 p-8">
-            <h2 className="font-semibold text-red-950">This archive could not be opened</h2>
+            <h2 ref={errorHeadingRef} tabIndex={-1} className="font-semibold text-red-950">
+              This archive could not be opened
+            </h2>
             <p className="mt-2 text-sm text-red-800">{error}</p>
             <Button className="mt-5" onClick={reset}>
               Try another file
@@ -184,10 +212,12 @@ export default function App() {
             <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-sm text-stone-500">{archiveName}</p>
-                <h2 className="mt-1 text-2xl font-bold text-stone-950">
-                  {entries.length} {entries.length === 1 ? 'file' : 'files'} ·{' '}
-                  {formatBytes(totalBytes)}
+                <h2 ref={readyHeadingRef} tabIndex={-1} className="mt-1 text-2xl font-bold text-stone-950">
+                  Files ready to download
                 </h2>
+                <p className="mt-1 text-sm text-stone-500">
+                  {entries.length} {entries.length === 1 ? 'file' : 'files'} · {formatBytes(totalBytes)}
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button secondary onClick={reset}>
