@@ -145,6 +145,65 @@ function makeZip64SentinelArchive(): Uint8Array {
   return archive;
 }
 
+function makeGhostLocalHeaderArchive(): Uint8Array {
+  const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  const name = strToU8('a.txt');
+  const payload = strToU8('ghost payload');
+  const rogue = new Uint8Array(30 + name.byteLength + payload.byteLength);
+  writeUint32(rogue, 0, 0x04034b50);
+  writeUint16(rogue, 4, 20);
+  writeUint16(rogue, 8, 0);
+  writeUint32(rogue, 14, crc32(payload));
+  writeUint32(rogue, 18, payload.byteLength);
+  writeUint32(rogue, 22, payload.byteLength);
+  writeUint16(rogue, 26, name.byteLength);
+  rogue.set(name, 30);
+  rogue.set(payload, 30 + name.byteLength);
+
+  const archive = new Uint8Array(rogue.byteLength + valid.byteLength);
+  archive.set(rogue);
+  archive.set(valid, rogue.byteLength);
+  writeUint32(
+    archive,
+    rogue.byteLength + central + 42,
+    rogue.byteLength + readUint32(valid, central + 42),
+  );
+  writeUint32(
+    archive,
+    rogue.byteLength + eocd + 16,
+    rogue.byteLength + readUint32(valid, eocd + 16),
+  );
+  return archive;
+}
+
+function makeCentralDirectoryEocdGapArchive(): Uint8Array {
+  const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
+  const eocd = findSignature(valid, 0x06054b50);
+  const archive = new Uint8Array(valid.length + 1);
+  archive.set(valid.subarray(0, eocd), 0);
+  archive[eocd] = 0;
+  archive.set(valid.subarray(eocd), eocd + 1);
+  return archive;
+}
+
+function makeZip64LocatorBeforeTailArchive(): Uint8Array {
+  const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
+  const eocd = findSignature(valid, 0x06054b50);
+  const locator = new Uint8Array(20);
+  writeUint32(locator, 0, 0x07064b50);
+  writeUint16(valid, eocd + 20, 0xffff);
+
+  const comment = new Uint8Array(0xffff);
+  const archive = new Uint8Array(valid.length + locator.length + comment.length);
+  archive.set(valid.subarray(0, eocd), 0);
+  archive.set(locator, eocd);
+  archive.set(valid.subarray(eocd), eocd + locator.length);
+  archive.set(comment, eocd + locator.length + valid.subarray(eocd).length);
+  return archive;
+}
+
 function fileFromBytes(bytes: Uint8Array, name: string): File {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
@@ -166,6 +225,24 @@ function patchDeclaredUncompressedSizes(archive: Uint8Array, size: number): Uint
   }
 
   return patched;
+}
+
+function captureThrown(fn: () => void): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Expected function to throw.');
+}
+
+async function captureRejected(promiseFactory: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await promiseFactory();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Expected promise to reject.');
 }
 
 describe('extractZip', () => {
@@ -419,6 +496,55 @@ describe('Zip64 archive detection', () => {
       caught = error;
     }
     expect(formatWorkerError(caught)).toBe('This ZIP is too large (over 4 GB) for the current extractor.');
+  });
+});
+
+describe('archive parse hardening', () => {
+  async function expectFailClosedOnBothPaths(
+    archive: Uint8Array,
+    ErrorType: typeof ArchiveSafetyError | typeof ArchiveUnsupportedError,
+    message: RegExp,
+  ) {
+    const inflateSpy = vi.spyOn(UnzipInflate.prototype, 'push');
+    const syncError = captureThrown(() => {
+      extractZip(archive);
+    });
+    expect(syncError).toBeInstanceOf(ErrorType);
+    expect(syncError).toEqual(expect.objectContaining({ message: expect.stringMatching(message) }));
+    expect(inflateSpy).not.toHaveBeenCalled();
+
+    const onEntry = vi.fn();
+    const fileError = await captureRejected(() =>
+      extractZipFile(fileFromBytes(archive, 'adversarial.zip'), { onEntry }),
+    );
+    expect(fileError).toBeInstanceOf(ErrorType);
+    expect(fileError).toEqual(expect.objectContaining({ message: expect.stringMatching(message) }));
+    expect(onEntry).not.toHaveBeenCalled();
+    expect(inflateSpy).not.toHaveBeenCalled();
+  }
+
+  it('rejects a ghost local header before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeGhostLocalHeaderArchive(),
+      ArchiveSafetyError,
+      /missing from the central directory/u,
+    );
+  });
+
+  it('rejects a central-directory/EOCD gap before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeCentralDirectoryEocdGapArchive(),
+      ArchiveSafetyError,
+      /abut the end-of-central-directory/u,
+    );
+  });
+
+  it('rejects a Zip64 locator just before the loaded tail window on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeZip64LocatorBeforeTailArchive(),
+      ArchiveUnsupportedError,
+      /zip64|too large/iu,
+    );
   });
 });
 

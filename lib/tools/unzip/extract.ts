@@ -23,6 +23,7 @@ export class ArchiveUnsupportedError extends Error {
 const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const EOCD_SIGNATURE = 0x06054b50;
+const DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
 const UTF_8 = new TextDecoder();
 const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -45,6 +46,21 @@ type CentralDirectoryEntry = {
   compressedSize: number;
   uncompressedSize: number;
   localHeaderOffset: number;
+};
+
+type CentralDirectoryMetadata = {
+  entries: CentralDirectoryEntry[];
+  centralDirectoryOffset: number;
+};
+
+type ValidatedLocalHeader = {
+  dataOffset: number;
+};
+
+type CentralDirectoryIndex = {
+  entries: CentralDirectoryEntry[];
+  entriesByName: Map<string, CentralDirectoryEntry>;
+  entriesInLocalOrder: CentralDirectoryEntry[];
 };
 
 function readUint16(bytes: Uint8Array, offset: number): number {
@@ -108,7 +124,7 @@ function findEndOfCentralDirectory(archive: Uint8Array): number {
   throw new ArchiveSafetyError('Archive is missing end-of-central-directory metadata.');
 }
 
-function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryEntry[] {
+function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryMetadata {
   const eocdOffset = findEndOfCentralDirectory(archive);
   const entryCount = readUint16(archive, eocdOffset + 10);
   const centralDirectorySize = readUint32(archive, eocdOffset + 12);
@@ -123,12 +139,17 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryEntry
       'Archive uses Zip64 extensions and cannot be extracted.',
     );
   }
-  if (centralDirectoryOffset + centralDirectorySize > archive.length) {
+  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
+  if (centralDirectoryEnd > eocdOffset || centralDirectoryEnd > archive.length) {
     throw new ArchiveSafetyError('Archive central directory is out of bounds.');
+  }
+  if (centralDirectoryEnd !== eocdOffset) {
+    throw new ArchiveSafetyError(
+      'Archive central directory must abut the end-of-central-directory record.',
+    );
   }
 
   const entries: CentralDirectoryEntry[] = [];
-  const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   let offset = centralDirectoryOffset;
   while (offset < centralDirectoryEnd) {
     if (readUint32(archive, offset) !== CENTRAL_DIRECTORY_SIGNATURE) {
@@ -184,13 +205,13 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryEntry
     throw new ArchiveSafetyError('Archive central directory entry count is inconsistent.');
   }
 
-  return entries;
+  return { entries, centralDirectoryOffset };
 }
 
 function validateLocalHeaderMatchesCentral(
   archive: Uint8Array,
   centralEntry: CentralDirectoryEntry,
-): void {
+): ValidatedLocalHeader {
   const offset = centralEntry.localHeaderOffset;
   if (offset + 30 > archive.length || readUint32(archive, offset) !== LOCAL_FILE_HEADER_SIGNATURE) {
     throw new ArchiveSafetyError('Archive local header is missing or invalid.');
@@ -239,13 +260,96 @@ function validateLocalHeaderMatchesCentral(
       throw new ArchiveSafetyError('Archive local and central size values do not match.');
     }
   }
+
+  return { dataOffset: localNameEnd + localExtraLength };
 }
 
-function buildCentralDirectoryIndex(archive: Uint8Array): Map<string, CentralDirectoryEntry> {
-  const entries = readCentralDirectoryEntries(archive);
+function assertDataDescriptorMatches(
+  descriptor: Uint8Array,
+  centralEntry: CentralDirectoryEntry,
+  hasSignature: boolean,
+): boolean {
+  if (hasSignature) {
+    return (
+      descriptor.length >= 16 &&
+      readUint32(descriptor, 0) === DATA_DESCRIPTOR_SIGNATURE &&
+      readUint32(descriptor, 4) === centralEntry.crc32 &&
+      readUint32(descriptor, 8) === centralEntry.compressedSize &&
+      readUint32(descriptor, 12) === centralEntry.uncompressedSize
+    );
+  }
+
+  return (
+    descriptor.length >= 12 &&
+    readUint32(descriptor, 0) === centralEntry.crc32 &&
+    readUint32(descriptor, 4) === centralEntry.compressedSize &&
+    readUint32(descriptor, 8) === centralEntry.uncompressedSize
+  );
+}
+
+function assertLocalRecordsMatchCentralDirectory(
+  archive: Uint8Array,
+  entriesInLocalOrder: CentralDirectoryEntry[],
+  centralDirectoryOffset: number,
+): void {
+  if (entriesInLocalOrder.length === 0) return;
+  if (entriesInLocalOrder[0]!.localHeaderOffset !== 0) {
+    throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+  }
+
+  for (let index = 0; index < entriesInLocalOrder.length; index += 1) {
+    const entry = entriesInLocalOrder[index]!;
+    const nextBoundary = entriesInLocalOrder[index + 1]?.localHeaderOffset ?? centralDirectoryOffset;
+    if (entry.localHeaderOffset >= nextBoundary) {
+      throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
+    }
+
+    const { dataOffset } = validateLocalHeaderMatchesCentral(archive, entry);
+    const dataEnd = dataOffset + entry.compressedSize;
+    if (dataEnd > nextBoundary) {
+      throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
+    }
+    if (!entry.hasDataDescriptor) {
+      if (dataEnd !== nextBoundary) {
+        throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+      }
+      continue;
+    }
+
+    const descriptorWithoutSignatureEnd = dataEnd + 12;
+    const descriptorWithSignatureEnd = dataEnd + 16;
+    if (
+      descriptorWithoutSignatureEnd === nextBoundary &&
+      assertDataDescriptorMatches(
+        archive.subarray(dataEnd, descriptorWithoutSignatureEnd),
+        entry,
+        false,
+      )
+    ) {
+      continue;
+    }
+    if (
+      descriptorWithSignatureEnd === nextBoundary &&
+      assertDataDescriptorMatches(
+        archive.subarray(dataEnd, descriptorWithSignatureEnd),
+        entry,
+        true,
+      )
+    ) {
+      continue;
+    }
+
+    throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
+  }
+}
+
+function buildCentralDirectoryIndex(archive: Uint8Array): CentralDirectoryIndex {
+  const { entries, centralDirectoryOffset } = readCentralDirectoryEntries(archive);
   for (const entry of entries) {
     validateLocalHeaderMatchesCentral(archive, entry);
   }
+  const entriesInLocalOrder = [...entries].sort((left, right) => left.localHeaderOffset - right.localHeaderOffset);
+  assertLocalRecordsMatchCentralDirectory(archive, entriesInLocalOrder, centralDirectoryOffset);
   const comparableNames = new Set<string>();
   const index = new Map<string, CentralDirectoryEntry>();
   for (const entry of entries) {
@@ -261,7 +365,7 @@ function buildCentralDirectoryIndex(archive: Uint8Array): Map<string, CentralDir
     index.set(entry.name, entry);
     comparableNames.add(comparableName);
   }
-  return index;
+  return { entries, entriesByName: index, entriesInLocalOrder };
 }
 
 function updateCrc32(crc: number, chunk: Uint8Array): number {
@@ -345,7 +449,8 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
   const { limits, maxEntryBytes } = splitLimits(options);
   const budget = new ArchiveSafetyBudget({ ...DEFAULT_ARCHIVE_LIMITS, ...limits });
   const entries: ExtractedEntry[] = [];
-  const centralEntriesByName = buildCentralDirectoryIndex(archive);
+  const { entriesByName: centralEntriesByName, entriesInLocalOrder } =
+    buildCentralDirectoryIndex(archive);
   for (const entry of centralEntriesByName.values()) {
     const declaredSize = toBigIntSize(entry.uncompressedSize);
     budget.checkDeclaredSize(declaredSize);
@@ -353,12 +458,17 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
       throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
     }
   }
+  let nextLocalEntryIndex = 0;
   const unzipper = new Unzip((file) => {
-    const centralEntry = centralEntriesByName.get(file.name);
-    if (centralEntry) centralEntriesByName.delete(file.name);
+    const centralEntry = entriesInLocalOrder[nextLocalEntryIndex];
     if (!centralEntry) {
       throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
+    if (file.name !== centralEntry.name || file.compression !== centralEntry.compression) {
+      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+    }
+    nextLocalEntryIndex += 1;
+    centralEntriesByName.delete(centralEntry.name);
 
     const path = budget.addEntry(file.name, centralEntry.kind);
     const declaredSize = BigInt(centralEntry.uncompressedSize);
@@ -450,12 +560,24 @@ async function readFileRange(file: File, start: number, length: number): Promise
 async function readCentralDirectoryEntriesFromFile(
   file: File,
   maxEntries: number,
-): Promise<CentralDirectoryEntry[]> {
+): Promise<CentralDirectoryMetadata> {
   const tailLength = Math.min(file.size, 22 + 0xffff);
   const tailOffset = file.size - tailLength;
   const tail = await readFileRange(file, tailOffset, tailLength);
   const relativeEocdOffset = findEndOfCentralDirectory(tail);
   const eocdOffset = tailOffset + relativeEocdOffset;
+  if (eocdOffset >= ZIP64_EOCD_LOCATOR_SIZE) {
+    const locator =
+      relativeEocdOffset >= ZIP64_EOCD_LOCATOR_SIZE
+        ? tail.subarray(relativeEocdOffset - ZIP64_EOCD_LOCATOR_SIZE, relativeEocdOffset)
+        : await readFileRange(file, eocdOffset - ZIP64_EOCD_LOCATOR_SIZE, ZIP64_EOCD_LOCATOR_SIZE);
+    if (readUint32(locator, 0) === ZIP64_EOCD_LOCATOR_SIGNATURE) {
+      throw new ArchiveUnsupportedError(
+        'zip64',
+        'Archive uses Zip64 extensions and cannot be extracted.',
+      );
+    }
+  }
   const entryCount = readUint16(tail, relativeEocdOffset + 10);
   const centralDirectorySize = readUint32(tail, relativeEocdOffset + 12);
   const centralDirectoryOffset = readUint32(tail, relativeEocdOffset + 16);
@@ -472,6 +594,11 @@ async function readCentralDirectoryEntriesFromFile(
   const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   if (centralDirectoryEnd > eocdOffset || centralDirectoryEnd > file.size) {
     throw new ArchiveSafetyError('Archive central directory is out of bounds.');
+  }
+  if (centralDirectoryEnd !== eocdOffset) {
+    throw new ArchiveSafetyError(
+      'Archive central directory must abut the end-of-central-directory record.',
+    );
   }
 
   const entries: CentralDirectoryEntry[] = [];
@@ -531,13 +658,13 @@ async function readCentralDirectoryEntriesFromFile(
   if (offset !== centralDirectoryEnd || entries.length !== entryCount) {
     throw new ArchiveSafetyError('Archive central directory entry count is inconsistent.');
   }
-  return entries;
+  return { entries, centralDirectoryOffset };
 }
 
 async function validateLocalHeaderFromFile(
   file: File,
   centralEntry: CentralDirectoryEntry,
-): Promise<void> {
+): Promise<ValidatedLocalHeader> {
   const fixed = await readFileRange(file, centralEntry.localHeaderOffset, 30);
   if (readUint32(fixed, 0) !== LOCAL_FILE_HEADER_SIGNATURE) {
     throw new ArchiveSafetyError('Archive local header is missing or invalid.');
@@ -577,6 +704,51 @@ async function validateLocalHeaderFromFile(
       throw new ArchiveSafetyError('Archive local and central size values do not match.');
     }
   }
+
+  return { dataOffset: centralEntry.localHeaderOffset + 30 + nameLength + extraLength };
+}
+
+async function assertLocalRecordsMatchCentralDirectoryFromFile(
+  file: File,
+  entriesInLocalOrder: CentralDirectoryEntry[],
+  centralDirectoryOffset: number,
+): Promise<void> {
+  if (entriesInLocalOrder.length === 0) return;
+  if (entriesInLocalOrder[0]!.localHeaderOffset !== 0) {
+    throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+  }
+
+  for (let index = 0; index < entriesInLocalOrder.length; index += 1) {
+    const entry = entriesInLocalOrder[index]!;
+    const nextBoundary = entriesInLocalOrder[index + 1]?.localHeaderOffset ?? centralDirectoryOffset;
+    if (entry.localHeaderOffset >= nextBoundary) {
+      throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
+    }
+
+    const { dataOffset } = await validateLocalHeaderFromFile(file, entry);
+    const dataEnd = dataOffset + entry.compressedSize;
+    if (dataEnd > nextBoundary) {
+      throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
+    }
+    if (!entry.hasDataDescriptor) {
+      if (dataEnd !== nextBoundary) {
+        throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+      }
+      continue;
+    }
+
+    const matchesDescriptorWithoutSignature =
+      dataEnd + 12 === nextBoundary &&
+      assertDataDescriptorMatches(await readFileRange(file, dataEnd, 12), entry, false);
+    if (matchesDescriptorWithoutSignature) continue;
+
+    const matchesDescriptorWithSignature =
+      dataEnd + 16 === nextBoundary &&
+      assertDataDescriptorMatches(await readFileRange(file, dataEnd, 16), entry, true);
+    if (matchesDescriptorWithSignature) continue;
+
+    throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
+  }
 }
 
 export async function extractZipFile(
@@ -586,7 +758,18 @@ export async function extractZipFile(
 ): Promise<number> {
   const { limits, maxEntryBytes } = splitLimits(options);
   const budget = new ArchiveSafetyBudget({ ...DEFAULT_ARCHIVE_LIMITS, ...limits });
-  const centralEntries = await readCentralDirectoryEntriesFromFile(file, budget.limits.maxEntries);
+  const { entries: centralEntries, centralDirectoryOffset } = await readCentralDirectoryEntriesFromFile(
+    file,
+    budget.limits.maxEntries,
+  );
+  const entriesInLocalOrder = [...centralEntries].sort(
+    (left, right) => left.localHeaderOffset - right.localHeaderOffset,
+  );
+  await assertLocalRecordsMatchCentralDirectoryFromFile(
+    file,
+    entriesInLocalOrder,
+    centralDirectoryOffset,
+  );
   const comparableNames = new Set<string>();
   const centralEntriesByName = new Map<string, CentralDirectoryEntry>();
   for (const entry of centralEntries) {
@@ -611,15 +794,20 @@ export async function extractZipFile(
 
   let activeEntry = false;
   let totalBytes = 0;
+  let nextLocalEntryIndex = 0;
   const unzipper = new Unzip((archiveEntry) => {
     if (activeEntry) {
       throw new ArchiveSafetyError('Archive entries overlap and cannot be processed sequentially.');
     }
-    const centralEntry = centralEntriesByName.get(archiveEntry.name);
-    if (centralEntry) centralEntriesByName.delete(archiveEntry.name);
+    const centralEntry = entriesInLocalOrder[nextLocalEntryIndex];
     if (!centralEntry) {
       throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
+    if (archiveEntry.name !== centralEntry.name || archiveEntry.compression !== centralEntry.compression) {
+      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+    }
+    nextLocalEntryIndex += 1;
+    centralEntriesByName.delete(centralEntry.name);
     const path = budget.addEntry(archiveEntry.name, centralEntry.kind);
     const declaredSize = BigInt(centralEntry.uncompressedSize);
     const entryByteLimit = computeEntryByteLimit(declaredSize, maxEntryBytes);
