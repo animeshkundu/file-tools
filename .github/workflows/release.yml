@@ -34,9 +34,12 @@ jobs:
       - name: Package Firefox extension and sources
         run: npm run zip:firefox
 
-      # Configure FIREFOX_EXTENSION_ID, FIREFOX_JWT_ISSUER, and
-      # FIREFOX_JWT_SECRET as repository Actions secrets.
+      # Optional. Set the repository variable PUBLISH_FIREFOX to true and add
+      # FIREFOX_EXTENSION_ID, FIREFOX_JWT_ISSUER, and FIREFOX_JWT_SECRET as
+      # repository Actions secrets. Skipped by default so the GitHub Release
+      # always publishes even without AMO credentials.
       - name: Publish listed extension to Firefox AMO
+        if: ${{ vars.PUBLISH_FIREFOX == 'true' }}
         env:
           FIREFOX_EXTENSION_ID: ${{ secrets.FIREFOX_EXTENSION_ID }}
           FIREFOX_JWT_ISSUER: ${{ secrets.FIREFOX_JWT_ISSUER }}
@@ -63,4 +66,22 @@ jobs:
         with:
           files: .output/*.zip
           fail_on_unmatched_files: true
-          generate_release_notes: true
+          body: |
+            **Unzip** — private, safe ZIP extraction for Firefox and Chrome, entirely in your browser.
+
+            > Your files never leave your device; no uploads, no accounts, no telemetry; all processing local.
+
+            ### Highlights
+            - Streaming, bounded-memory extraction with per-entry and aggregate caps.
+            - Fail-closed ZIP parsing driven by the central directory: encrypted, Zip64/over-4 GB, corrupt, and crafted archives are rejected with clear messages.
+            - Full path safety (zip-slip, absolute/UNC/drive paths, Windows reserved names, bidi/Unicode spoofing, case-collisions).
+            - Virtualized, sortable, filterable file tree; download one file or the whole tree with collision-safe names.
+            - Cancellable, WCAG-AA accessible, real-Firefox end-to-end tested; one MV3 codebase for Chrome and Firefox; zero install-time permissions.
+
+            ### Install
+            - Firefox (AMO): coming soon
+            - Chrome (Chrome Web Store): coming soon
+
+            Learn more: https://animesh.kundus.in/file-tools/
+
+            Attached: the built Chrome and Firefox extension packages and the Firefox sources archive.
