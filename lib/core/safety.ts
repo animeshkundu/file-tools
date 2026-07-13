@@ -27,14 +27,15 @@ export class ArchiveSafetyError extends Error {
 
 const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
 const WINDOWS_UNSAFE_CHARACTERS = /[<>:"|?*]/u;
-const BIDI_CONTROL_CHARACTERS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+const BIDI_OVERRIDE_CONTROL_CHARACTERS = /[\u202a-\u202e\u2066-\u2069]/u;
+const MAX_PATH_SEGMENT_BYTES = 255;
 const TEXT_ENCODER = new TextEncoder();
 
 export function safeArchivePath(name: string, root = '/extract'): string {
   if (
     !name ||
     name.includes('\\') ||
-    BIDI_CONTROL_CHARACTERS.test(name) ||
+    BIDI_OVERRIDE_CONTROL_CHARACTERS.test(name) ||
     [...name].some((character) => {
       const code = character.codePointAt(0);
       return code !== undefined && (code <= 31 || code === 127);
@@ -60,6 +61,7 @@ export function safeArchivePath(name: string, root = '/extract'): string {
   if (
     parts.some(
       (part) =>
+        TEXT_ENCODER.encode(part).byteLength > MAX_PATH_SEGMENT_BYTES ||
         WINDOWS_UNSAFE_CHARACTERS.test(part) ||
         WINDOWS_RESERVED_NAMES.test(part) ||
         part.endsWith('.') ||

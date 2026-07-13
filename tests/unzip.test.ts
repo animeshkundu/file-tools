@@ -1,8 +1,8 @@
-import { strFromU8, strToU8, zipSync } from 'fflate';
+import { UnzipInflate, strFromU8, strToU8, zipSync } from 'fflate';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArchiveSafetyError } from '../lib/core/safety';
 import { runUnzipWorker } from '../lib/core/worker';
-import { extractZip, extractZipFile } from '../lib/tools/unzip/extract';
+import { extractZip, extractZipFile, toBigIntSize } from '../lib/tools/unzip/extract';
 import {
   ARCHIVE_READ_CHUNK_BYTES,
   assertArchiveInputSize,
@@ -15,6 +15,7 @@ const ROGUE_DECLARED_SIZE = 0x20000000;
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   FakeWorker.instances = [];
 });
@@ -160,6 +161,23 @@ describe('extractZip', () => {
     expect(() => extractZip(archive, { maxEmittedBytes: 4n })).toThrow(/extraction limit/u);
   });
 
+  it('terminates decompression when an emitted-byte guard trips mid-stream', () => {
+    const archive = zipSync({ 'large.txt': strToU8('12345') });
+    let deliveredSecondChunk = false;
+    vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
+      this: UnzipInflate,
+      _chunk,
+      final,
+    ) {
+      this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5), false);
+      deliveredSecondChunk = true;
+      this.ondata(null, Uint8Array.of(6), final);
+    });
+
+    expect(() => extractZip(archive, { maxEmittedBytes: 4n })).toThrow(/extraction limit/u);
+    expect(deliveredSecondChunk).toBe(false);
+  });
+
   it('enforces the per-entry cap before retaining an oversized entry', () => {
     const archive = zipSync({ 'large.txt': strToU8('12345') });
     expect(() => extractZip(archive, { maxEntryBytes: 4n })).toThrow(/per-entry/u);
@@ -253,6 +271,12 @@ describe('extractZip', () => {
       extractZipFile(fileFromBytes(archive, 'malicious.zip'), { onEntry }),
     ).rejects.toBeInstanceOf(ArchiveSafetyError);
     expect(onEntry).not.toHaveBeenCalled();
+  });
+});
+
+describe('toBigIntSize', () => {
+  it.each([undefined, Number.NaN])('rejects invalid sizes before bigint conversion: %s', (size) => {
+    expect(() => toBigIntSize(size)).toThrow(/invalid size/u);
   });
 });
 

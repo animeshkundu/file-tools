@@ -29,6 +29,20 @@ describe('safeArchivePath', () => {
     expect(safeArchivePath('folder/')).toBe('folder');
   });
 
+  it.each(['con', 'COM1.txt', 'folder/Lpt9.log'])(
+    'rejects Windows reserved device name %s',
+    (path) => expect(() => safeArchivePath(path)).toThrow(/unsafe on Windows/u),
+  );
+
+  it.each(['report\u202etxt.exe', 'folder/\u2066safe.txt'])(
+    'rejects bidi override characters in %s',
+    (path) => expect(() => safeArchivePath(path)).toThrow(/unsafe filename/u),
+  );
+
+  it('rejects path segments longer than 255 bytes', () => {
+    expect(() => safeArchivePath(`${'a'.repeat(256)}.txt`)).toThrow(/unsafe on Windows/u);
+  });
+
   it.each(['symlink', 'special'] as const)('rejects %s entries', (kind) => {
     expect(() => assertRegularEntry(kind)).toThrow(ArchiveSafetyError);
   });
@@ -75,6 +89,9 @@ describe('ArchiveSafetyBudget', () => {
     expect(() => new ArchiveSafetyBudget({ maxPathBytes: 4 }).addEntry('file.txt', 'file')).toThrow(
       /too long/u,
     );
+    expect(() =>
+      new ArchiveSafetyBudget({ maxPathBytes: 10 }).addEntry('folder/file.txt', 'file'),
+    ).toThrow(/too long/u);
   });
 
   it('rejects nested extraction by default', () => {
