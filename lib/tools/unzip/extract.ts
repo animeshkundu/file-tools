@@ -9,6 +9,17 @@ import {
 } from '../../core/safety';
 import { ARCHIVE_READ_CHUNK_BYTES, MAX_ENTRY_OUTPUT_BYTES, type ExtractedEntry } from './types';
 
+export type ArchiveUnsupportedReason = 'encrypted' | 'zip64';
+
+export class ArchiveUnsupportedError extends Error {
+  readonly reason: ArchiveUnsupportedReason;
+  constructor(reason: ArchiveUnsupportedReason, message: string) {
+    super(message);
+    this.name = 'ArchiveUnsupportedError';
+    this.reason = reason;
+  }
+}
+
 const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const EOCD_SIGNATURE = 0x06054b50;
@@ -68,6 +79,9 @@ function classifyEntryKind(name: string, externalAttributes: number): ArchiveEnt
   return 'file';
 }
 
+const ZIP64_EOCD_LOCATOR_SIGNATURE = 0x07064b50;
+const ZIP64_EOCD_LOCATOR_SIZE = 20;
+
 function findEndOfCentralDirectory(archive: Uint8Array): number {
   const minimum = 22;
   if (archive.length < minimum) {
@@ -79,7 +93,17 @@ function findEndOfCentralDirectory(archive: Uint8Array): number {
   for (let offset = archive.length - minimum; offset >= searchStart; offset -= 1) {
     if (readUint32(archive, offset) !== EOCD_SIGNATURE) continue;
     const commentLength = readUint16(archive, offset + 20);
-    if (offset + minimum + commentLength === archive.length) return offset;
+    if (offset + minimum + commentLength === archive.length) {
+      // Check for a Zip64 end-of-central-directory locator immediately before the EOCD.
+      // If present, this is a Zip64 archive that the plain extractor cannot handle.
+      if (offset >= ZIP64_EOCD_LOCATOR_SIZE && readUint32(archive, offset - ZIP64_EOCD_LOCATOR_SIZE) === ZIP64_EOCD_LOCATOR_SIGNATURE) {
+        throw new ArchiveUnsupportedError(
+          'zip64',
+          'Archive uses Zip64 extensions and cannot be extracted.',
+        );
+      }
+      return offset;
+    }
   }
   throw new ArchiveSafetyError('Archive is missing end-of-central-directory metadata.');
 }
@@ -94,7 +118,10 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryEntry
     centralDirectorySize === 0xffffffff ||
     centralDirectoryOffset === 0xffffffff
   ) {
-    throw new ArchiveSafetyError('Zip64 central directories are not supported.');
+    throw new ArchiveUnsupportedError(
+      'zip64',
+      'Archive uses Zip64 extensions and cannot be extracted.',
+    );
   }
   if (centralDirectoryOffset + centralDirectorySize > archive.length) {
     throw new ArchiveSafetyError('Archive central directory is out of bounds.');
@@ -118,6 +145,20 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryEntry
     const commentLength = readUint16(archive, offset + 32);
     const externalAttributes = readUint32(archive, offset + 38);
     const localHeaderOffset = readUint32(archive, offset + 42);
+
+    if ((flags & 0x0001) !== 0) {
+      throw new ArchiveUnsupportedError(
+        'encrypted',
+        'Archive contains an encrypted entry and cannot be extracted.',
+      );
+    }
+
+    if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff || localHeaderOffset === 0xffffffff) {
+      throw new ArchiveUnsupportedError(
+        'zip64',
+        'Archive uses Zip64 extensions and cannot be extracted.',
+      );
+    }
 
     const variableStart = offset + 46;
     const variableEnd = variableStart + nameLength + extraLength + commentLength;
@@ -166,6 +207,13 @@ function validateLocalHeaderMatchesCentral(
   const localNameEnd = localNameStart + localNameLength;
   if (localNameEnd > archive.length || localNameEnd + localExtraLength > archive.length) {
     throw new ArchiveSafetyError('Archive local header is truncated.');
+  }
+
+  if ((localFlags & 0x0001) !== 0) {
+    throw new ArchiveUnsupportedError(
+      'encrypted',
+      'Archive contains an encrypted entry and cannot be extracted.',
+    );
   }
 
   const localName = archive.subarray(localNameStart, localNameEnd);
@@ -416,7 +464,10 @@ async function readCentralDirectoryEntriesFromFile(
     centralDirectorySize === 0xffffffff ||
     centralDirectoryOffset === 0xffffffff
   ) {
-    throw new ArchiveSafetyError('Zip64 central directories are not supported.');
+    throw new ArchiveUnsupportedError(
+      'zip64',
+      'Archive uses Zip64 extensions and cannot be extracted.',
+    );
   }
   const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   if (centralDirectoryEnd > eocdOffset || centralDirectoryEnd > file.size) {
@@ -442,18 +493,38 @@ async function readCentralDirectoryEntriesFromFile(
     }
     const variable = await readFileRange(file, offset + 46, variableLength);
     const name = UTF_8.decode(variable.subarray(0, nameLength));
+    const entryFlags = readUint16(fixed, 8);
+    if ((entryFlags & 0x0001) !== 0) {
+      throw new ArchiveUnsupportedError(
+        'encrypted',
+        'Archive contains an encrypted entry and cannot be extracted.',
+      );
+    }
+    const entryCompressedSize = readUint32(fixed, 20);
+    const entryUncompressedSize = readUint32(fixed, 24);
+    const entryLocalHeaderOffset = readUint32(fixed, 42);
+    if (
+      entryCompressedSize === 0xffffffff ||
+      entryUncompressedSize === 0xffffffff ||
+      entryLocalHeaderOffset === 0xffffffff
+    ) {
+      throw new ArchiveUnsupportedError(
+        'zip64',
+        'Archive uses Zip64 extensions and cannot be extracted.',
+      );
+    }
     if (entries.length >= maxEntries) {
       throw new ArchiveSafetyError('Archive contains too many entries.');
     }
     entries.push({
       name,
       kind: classifyEntryKind(name, readUint32(fixed, 38)),
-      hasDataDescriptor: (readUint16(fixed, 8) & 0x0008) !== 0,
+      hasDataDescriptor: (entryFlags & 0x0008) !== 0,
       compression: readUint16(fixed, 10),
       crc32: readUint32(fixed, 16),
-      compressedSize: readUint32(fixed, 20),
-      uncompressedSize: readUint32(fixed, 24),
-      localHeaderOffset: readUint32(fixed, 42),
+      compressedSize: entryCompressedSize,
+      uncompressedSize: entryUncompressedSize,
+      localHeaderOffset: entryLocalHeaderOffset,
     });
     offset += 46 + variableLength;
   }
@@ -471,6 +542,13 @@ async function validateLocalHeaderFromFile(
   if (readUint32(fixed, 0) !== LOCAL_FILE_HEADER_SIGNATURE) {
     throw new ArchiveSafetyError('Archive local header is missing or invalid.');
   }
+  const localFlags = readUint16(fixed, 6);
+  if ((localFlags & 0x0001) !== 0) {
+    throw new ArchiveUnsupportedError(
+      'encrypted',
+      'Archive contains an encrypted entry and cannot be extracted.',
+    );
+  }
   const nameLength = readUint16(fixed, 26);
   const extraLength = readUint16(fixed, 28);
   const variable = await readFileRange(
@@ -484,7 +562,7 @@ async function validateLocalHeaderFromFile(
   if (readUint16(fixed, 8) !== centralEntry.compression) {
     throw new ArchiveSafetyError('Archive local and central compression methods do not match.');
   }
-  const hasDataDescriptor = (readUint16(fixed, 6) & 0x0008) !== 0;
+  const hasDataDescriptor = (localFlags & 0x0008) !== 0;
   if (hasDataDescriptor !== centralEntry.hasDataDescriptor) {
     throw new ArchiveSafetyError('Archive local and central descriptor flags do not match.');
   }
