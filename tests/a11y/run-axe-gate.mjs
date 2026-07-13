@@ -19,18 +19,38 @@ if (axeRun.status !== 0) {
 }
 
 const rawOutput = `${axeRun.stdout ?? ""}${axeRun.stderr ?? ""}`;
-const jsonStart = rawOutput.indexOf("[");
-const jsonEnd = rawOutput.lastIndexOf("]");
-
-if (jsonStart === -1 || jsonEnd === -1 || jsonStart > jsonEnd) {
-  process.stderr.write(rawOutput);
-  throw new Error("Unable to parse axe-core output.");
+let results = null;
+for (
+  let jsonStart = rawOutput.indexOf("[");
+  jsonStart !== -1 && results === null;
+  jsonStart = rawOutput.indexOf("[", jsonStart + 1)
+) {
+  for (
+    let jsonEnd = rawOutput.lastIndexOf("]");
+    jsonEnd > jsonStart && results === null;
+    jsonEnd = rawOutput.lastIndexOf("]", jsonEnd - 1)
+  ) {
+    try {
+      const parsed = JSON.parse(rawOutput.slice(jsonStart, jsonEnd + 1));
+      if (Array.isArray(parsed)) {
+        results = parsed;
+      }
+    } catch {
+      // Keep searching for the valid JSON payload.
+    }
+  }
 }
 
-const results = JSON.parse(rawOutput.slice(jsonStart, jsonEnd + 1));
+if (results === null) {
+  process.stderr.write(rawOutput);
+  throw new Error("Unable to parse axe-core JSON output.");
+}
 const blockingImpacts = new Set(["serious", "critical"]);
 const blockingViolations = results.flatMap((result) =>
-  (result.violations ?? []).filter((violation) => blockingImpacts.has(violation.impact)),
+  (result.violations ?? []).filter((violation) => {
+    const impact = typeof violation.impact === "string" ? violation.impact : null;
+    return impact !== null && blockingImpacts.has(impact);
+  }),
 );
 
 if (blockingViolations.length > 0) {
