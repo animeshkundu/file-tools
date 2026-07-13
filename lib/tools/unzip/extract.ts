@@ -3,6 +3,7 @@ import {
   ArchiveSafetyBudget,
   ArchiveSafetyError,
   DEFAULT_ARCHIVE_LIMITS,
+  foldArchivePathForComparison,
   type ArchiveEntryKind,
   type ArchiveLimits,
 } from '../../core/safety';
@@ -197,12 +198,20 @@ function buildCentralDirectoryIndex(archive: Uint8Array): Map<string, CentralDir
   for (const entry of entries) {
     validateLocalHeaderMatchesCentral(archive, entry);
   }
+  const comparableNames = new Set<string>();
   const index = new Map<string, CentralDirectoryEntry>();
   for (const entry of entries) {
     if (index.has(entry.name)) {
       throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
     }
+    const comparableName = foldArchivePathForComparison(entry.name);
+    if (comparableNames.has(comparableName)) {
+      throw new ArchiveSafetyError(
+        'Archive central directory contains case-colliding entry names.',
+      );
+    }
     index.set(entry.name, entry);
+    comparableNames.add(comparableName);
   }
   return index;
 }
@@ -223,6 +232,10 @@ type ExtractCallbacks = {
   onProgress?: (loadedBytes: number, totalBytes: number) => void;
 };
 
+type TerminableEntry = {
+  terminate: () => void;
+};
+
 function splitLimits(options: ExtractOptions): {
   limits: Partial<ArchiveLimits>;
   maxEntryBytes: bigint;
@@ -234,16 +247,39 @@ function splitLimits(options: ExtractOptions): {
   return { limits, maxEntryBytes };
 }
 
+function toBigIntSize(size: number | undefined): bigint {
+  if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) {
+    throw new ArchiveSafetyError(
+      'Archive entry declares an invalid size (must be a non-negative safe integer).',
+    );
+  }
+  return BigInt(size);
+}
+
+function abortEntry(entry: TerminableEntry, error: unknown): never {
+  try {
+    entry.terminate();
+  } catch {
+    // Preserve the original archive safety failure; discard any termination error to avoid
+    // masking the root cause.
+  }
+  throw error;
+}
+
 function assertEntryChunkWithinLimit(
   currentSize: number,
   chunkSize: number,
-  maxEntryBytes: bigint,
+  entryByteLimit: bigint,
 ): number {
   const nextSize = currentSize + chunkSize;
-  if (!Number.isSafeInteger(nextSize) || BigInt(nextSize) > maxEntryBytes) {
+  if (!Number.isSafeInteger(nextSize) || BigInt(nextSize) > entryByteLimit) {
     throw new ArchiveSafetyError('Archive entry expanded beyond the per-entry extraction limit.');
   }
   return nextSize;
+}
+
+function computeEntryByteLimit(declaredSize: bigint, maxEntryBytes: bigint): bigint {
+  return declaredSize < maxEntryBytes ? declaredSize : maxEntryBytes;
 }
 
 function joinEntryChunks(chunks: Uint8Array[], size: number): Uint8Array {
@@ -263,8 +299,9 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
   const entries: ExtractedEntry[] = [];
   const centralEntriesByName = buildCentralDirectoryIndex(archive);
   for (const entry of centralEntriesByName.values()) {
-    budget.checkDeclaredSize(BigInt(entry.uncompressedSize));
-    if (BigInt(entry.uncompressedSize) > maxEntryBytes) {
+    const declaredSize = toBigIntSize(entry.uncompressedSize);
+    budget.checkDeclaredSize(declaredSize);
+    if (declaredSize > maxEntryBytes) {
       throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
     }
   }
@@ -276,6 +313,8 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
     }
 
     const path = budget.addEntry(file.name, centralEntry.kind);
+    const declaredSize = BigInt(centralEntry.uncompressedSize);
+    const entryByteLimit = computeEntryByteLimit(declaredSize, maxEntryBytes);
     if (centralEntry.kind === 'directory') {
       file.ondata = (error, chunk) => {
         if (error) {
@@ -295,28 +334,33 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
     let size = 0;
     const chunks: Uint8Array[] = [];
     file.ondata = (error, chunk, final) => {
-      if (error) {
-        throw new ArchiveSafetyError(
-          `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
-        );
-      }
-      const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, maxEntryBytes);
-      budget.addEmittedBytes(chunk.byteLength);
-      if (chunk.byteLength > 0) {
-        chunks.push(chunk);
-        crc = updateCrc32(crc, chunk);
-      }
-      size = nextSize;
-      if (final) {
-        if (size !== centralEntry.uncompressedSize) {
-          throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
+      try {
+        if (error) {
+          throw new ArchiveSafetyError(
+            `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
+          );
         }
-        const actualCrc32 = (crc ^ 0xffffffff) >>> 0;
-        if (actualCrc32 !== centralEntry.crc32) {
-          throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${path}`);
+        const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, entryByteLimit);
+        budget.addEmittedBytes(chunk.byteLength);
+        if (chunk.byteLength > 0) {
+          chunks.push(chunk);
+          crc = updateCrc32(crc, chunk);
         }
-        const output = joinEntryChunks(chunks, size);
-        entries.push({ path, bytes: output, size });
+        size = nextSize;
+        if (final) {
+          if (size !== centralEntry.uncompressedSize) {
+            throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
+          }
+          const actualCrc32 = (crc ^ 0xffffffff) >>> 0;
+          if (actualCrc32 !== centralEntry.crc32) {
+            throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${path}`);
+          }
+          const output = joinEntryChunks(chunks, size);
+          entries.push({ path, bytes: output, size });
+        }
+      } catch (caughtError) {
+        chunks.length = 0;
+        abortEntry(file, caughtError);
       }
     };
 
@@ -465,15 +509,24 @@ export async function extractZipFile(
   const { limits, maxEntryBytes } = splitLimits(options);
   const budget = new ArchiveSafetyBudget({ ...DEFAULT_ARCHIVE_LIMITS, ...limits });
   const centralEntries = await readCentralDirectoryEntriesFromFile(file, budget.limits.maxEntries);
+  const comparableNames = new Set<string>();
   const centralEntriesByName = new Map<string, CentralDirectoryEntry>();
   for (const entry of centralEntries) {
     await validateLocalHeaderFromFile(file, entry);
     if (centralEntriesByName.has(entry.name)) {
       throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
     }
+    const comparableName = foldArchivePathForComparison(entry.name);
+    if (comparableNames.has(comparableName)) {
+      throw new ArchiveSafetyError(
+        'Archive central directory contains case-colliding entry names.',
+      );
+    }
     centralEntriesByName.set(entry.name, entry);
-    budget.checkDeclaredSize(BigInt(entry.uncompressedSize));
-    if (BigInt(entry.uncompressedSize) > maxEntryBytes) {
+    comparableNames.add(comparableName);
+    const declaredSize = toBigIntSize(entry.uncompressedSize);
+    budget.checkDeclaredSize(declaredSize);
+    if (declaredSize > maxEntryBytes) {
       throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
     }
   }
@@ -490,6 +543,8 @@ export async function extractZipFile(
       throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
     const path = budget.addEntry(archiveEntry.name, centralEntry.kind);
+    const declaredSize = BigInt(centralEntry.uncompressedSize);
+    const entryByteLimit = computeEntryByteLimit(declaredSize, maxEntryBytes);
     if (centralEntry.kind === 'directory') {
       activeEntry = true;
       archiveEntry.ondata = (error, chunk, final) => {
@@ -512,29 +567,35 @@ export async function extractZipFile(
     let crc = 0xffffffff;
     let size = 0;
     archiveEntry.ondata = (error, chunk, final) => {
-      if (error) {
-        throw new ArchiveSafetyError(
-          `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
-        );
+      try {
+        if (error) {
+          throw new ArchiveSafetyError(
+            `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
+          );
+        }
+        const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, entryByteLimit);
+        budget.addEmittedBytes(chunk.byteLength);
+        if (chunk.byteLength > 0) {
+          chunks.push(chunk);
+          crc = updateCrc32(crc, chunk);
+        }
+        size = nextSize;
+        if (!final) return;
+        if (size !== centralEntry.uncompressedSize) {
+          throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
+        }
+        if ((crc ^ 0xffffffff) >>> 0 !== centralEntry.crc32) {
+          throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${path}`);
+        }
+        totalBytes += size;
+        activeEntry = false;
+        const output = joinEntryChunks(chunks, size);
+        callbacks.onEntry({ path, bytes: output, size });
+      } catch (caughtError) {
+        chunks.length = 0;
+        activeEntry = false;
+        abortEntry(archiveEntry, caughtError);
       }
-      const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, maxEntryBytes);
-      budget.addEmittedBytes(chunk.byteLength);
-      if (chunk.byteLength > 0) {
-        chunks.push(chunk);
-        crc = updateCrc32(crc, chunk);
-      }
-      size = nextSize;
-      if (!final) return;
-      if (size !== centralEntry.uncompressedSize) {
-        throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
-      }
-      if ((crc ^ 0xffffffff) >>> 0 !== centralEntry.crc32) {
-        throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${path}`);
-      }
-      totalBytes += size;
-      activeEntry = false;
-      const output = joinEntryChunks(chunks, size);
-      callbacks.onEntry({ path, bytes: output, size });
     };
     archiveEntry.start();
   });
