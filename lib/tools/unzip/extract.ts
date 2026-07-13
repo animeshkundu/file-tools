@@ -82,14 +82,14 @@ type EndOfCentralDirectoryRecord = {
 
 function readUint16(bytes: Uint8Array, offset: number): number {
   if (offset < 0 || offset + 2 > bytes.length) {
-    throw new ArchiveSafetyError('Archive structure is truncated.');
+    throw new ArchiveSafetyError('Archive structure is truncated.', 'corrupt');
   }
   return bytes[offset]! | (bytes[offset + 1]! << 8);
 }
 
 function readUint32(bytes: Uint8Array, offset: number): number {
   if (offset < 0 || offset + 4 > bytes.length) {
-    throw new ArchiveSafetyError('Archive structure is truncated.');
+    throw new ArchiveSafetyError('Archive structure is truncated.', 'corrupt');
   }
   return (
     (bytes[offset]! |
@@ -118,7 +118,10 @@ const ZIP64_EOCD_LOCATOR_SIZE = 20;
 function findEndOfCentralDirectory(archive: Uint8Array): number {
   const minimum = 22;
   if (archive.length < minimum) {
-    throw new ArchiveSafetyError('Archive is missing end-of-central-directory metadata.');
+    throw new ArchiveSafetyError(
+      'Archive is missing end-of-central-directory metadata.',
+      'corrupt',
+    );
   }
 
   const maxCommentLength = 0xffff;
@@ -138,7 +141,7 @@ function findEndOfCentralDirectory(archive: Uint8Array): number {
       return offset;
     }
   }
-  throw new ArchiveSafetyError('Archive is missing end-of-central-directory metadata.');
+  throw new ArchiveSafetyError('Archive is missing end-of-central-directory metadata.', 'corrupt');
 }
 
 function parseEndOfCentralDirectory(
@@ -148,7 +151,10 @@ function parseEndOfCentralDirectory(
   // EOCD disk number (+4) and central-directory-start disk (+6) must both be zero for
   // single-disk archives. Any non-zero value indicates a multi-disk ZIP, which is unsupported.
   if (readUint16(archive, eocdOffset + 4) !== 0 || readUint16(archive, eocdOffset + 6) !== 0) {
-    throw new ArchiveSafetyError('Archive spans multiple disks and cannot be extracted.');
+    throw new ArchiveSafetyError(
+      'Archive spans multiple disks and cannot be extracted.',
+      'corrupt',
+    );
   }
 
   const entriesOnThisDisk = readUint16(archive, eocdOffset + 8);
@@ -192,11 +198,12 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryMetad
   );
   const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   if (centralDirectoryEnd > eocdOffset || centralDirectoryEnd > archive.length) {
-    throw new ArchiveSafetyError('Archive central directory is out of bounds.');
+    throw new ArchiveSafetyError('Archive central directory is out of bounds.', 'corrupt');
   }
   if (centralDirectoryEnd !== eocdOffset) {
     throw new ArchiveSafetyError(
       'Archive central directory must abut the end-of-central-directory record.',
+      'corrupt',
     );
   }
 
@@ -204,7 +211,7 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryMetad
   let offset = centralDirectoryOffset;
   while (offset < centralDirectoryEnd) {
     if (readUint32(archive, offset) !== CENTRAL_DIRECTORY_SIGNATURE) {
-      throw new ArchiveSafetyError('Archive central directory has an invalid record.');
+      throw new ArchiveSafetyError('Archive central directory has an invalid record.', 'corrupt');
     }
 
     const flags = readUint16(archive, offset + 8);
@@ -235,7 +242,7 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryMetad
     const variableStart = offset + 46;
     const variableEnd = variableStart + nameLength + extraLength + commentLength;
     if (variableEnd > archive.length || variableEnd > centralDirectoryEnd) {
-      throw new ArchiveSafetyError('Archive central directory has a truncated record.');
+      throw new ArchiveSafetyError('Archive central directory has a truncated record.', 'corrupt');
     }
     const nameBytes = archive.subarray(variableStart, variableStart + nameLength);
     const name = UTF_8.decode(nameBytes);
@@ -253,7 +260,10 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryMetad
   }
 
   if (offset !== centralDirectoryEnd || entries.length !== entryCount) {
-    throw new ArchiveSafetyError('Archive central directory entry count is inconsistent.');
+    throw new ArchiveSafetyError(
+      'Archive central directory entry count is inconsistent.',
+      'corrupt',
+    );
   }
 
   return { entries, centralDirectoryOffset };
@@ -265,7 +275,7 @@ function validateLocalHeaderMatchesCentral(
 ): ValidatedLocalHeader {
   const offset = centralEntry.localHeaderOffset;
   if (offset + 30 > archive.length || readUint32(archive, offset) !== LOCAL_FILE_HEADER_SIGNATURE) {
-    throw new ArchiveSafetyError('Archive local header is missing or invalid.');
+    throw new ArchiveSafetyError('Archive local header is missing or invalid.', 'corrupt');
   }
 
   const localFlags = readUint16(archive, offset + 6);
@@ -278,7 +288,7 @@ function validateLocalHeaderMatchesCentral(
   const localNameStart = offset + 30;
   const localNameEnd = localNameStart + localNameLength;
   if (localNameEnd > archive.length || localNameEnd + localExtraLength > archive.length) {
-    throw new ArchiveSafetyError('Archive local header is truncated.');
+    throw new ArchiveSafetyError('Archive local header is truncated.', 'corrupt');
   }
 
   if ((localFlags & 0x0001) !== 0) {
@@ -291,32 +301,44 @@ function validateLocalHeaderMatchesCentral(
 
   const localName = archive.subarray(localNameStart, localNameEnd);
   if (UTF_8.decode(localName) !== centralEntry.name) {
-    throw new ArchiveSafetyError('Archive local and central filenames do not match.');
+    throw new ArchiveSafetyError('Archive local and central filenames do not match.', 'corrupt');
   }
   if (localCompression !== centralEntry.compression) {
-    throw new ArchiveSafetyError('Archive local and central compression methods do not match.');
+    throw new ArchiveSafetyError(
+      'Archive local and central compression methods do not match.',
+      'corrupt',
+    );
   }
 
   const localHasDataDescriptor = (localFlags & 0x0008) !== 0;
   if (localHasDataDescriptor !== centralEntry.hasDataDescriptor) {
-    throw new ArchiveSafetyError('Archive local and central descriptor flags do not match.');
+    throw new ArchiveSafetyError(
+      'Archive local and central descriptor flags do not match.',
+      'corrupt',
+    );
   }
   if (!centralEntry.hasDataDescriptor) {
     if (localCrc32 !== centralEntry.crc32) {
-      throw new ArchiveSafetyError('Archive local and central CRC values do not match.');
+      throw new ArchiveSafetyError('Archive local and central CRC values do not match.', 'corrupt');
     }
     if (
       localCompressedSize !== centralEntry.compressedSize ||
       localUncompressedSize !== centralEntry.uncompressedSize
     ) {
-      throw new ArchiveSafetyError('Archive local and central size values do not match.');
+      throw new ArchiveSafetyError(
+        'Archive local and central size values do not match.',
+        'corrupt',
+      );
     }
   }
 
   const dataOffset = localNameEnd + localExtraLength;
   const compressedDataEnd = dataOffset + centralEntry.compressedSize;
   if (compressedDataEnd > archive.length) {
-    throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
+    throw new ArchiveSafetyError(
+      'Archive local record exceeds its central directory boundary.',
+      'corrupt',
+    );
   }
   if (!centralEntry.hasDataDescriptor) {
     return { dataOffset, recordEnd: compressedDataEnd };
@@ -346,7 +368,10 @@ function validateLocalHeaderMatchesCentral(
     return { dataOffset, recordEnd: descriptorWithSignatureEnd };
   }
 
-  throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
+  throw new ArchiveSafetyError(
+    'Archive data descriptor does not match the central directory.',
+    'corrupt',
+  );
 }
 
 function dataDescriptorMatches(
@@ -374,7 +399,10 @@ function dataDescriptorMatches(
 
 function assertSupportedCompressionMethod(method: number): asserts method is 0 | 8 {
   if (method !== 0 && method !== 8) {
-    throw new ArchiveSafetyError('Archive entry uses an unsupported compression method.');
+    throw new ArchiveSafetyError(
+      'Archive entry uses an unsupported compression method.',
+      'unsupported-method',
+    );
   }
 }
 
@@ -383,7 +411,7 @@ function assertEntryDataRangesDoNotOverlap(plans: ValidatedEntryPlan[]): void {
   let previousEnd = 0;
   for (const plan of ranges) {
     if (plan.compressedSize > 0 && plan.dataOffset < previousEnd) {
-      throw new ArchiveSafetyError('Archive entry data ranges overlap.');
+      throw new ArchiveSafetyError('Archive entry data ranges overlap.', 'corrupt');
     }
     previousEnd = Math.max(previousEnd, plan.dataOffset + plan.compressedSize);
   }
@@ -404,7 +432,9 @@ function buildValidatedEntryPlans(
     }
     const comparableName = foldArchivePathForComparison(entry.name);
     if (comparableNames.has(comparableName)) {
-      throw new ArchiveSafetyError('Archive central directory contains case-colliding entry names.');
+      throw new ArchiveSafetyError(
+        'Archive central directory contains case-colliding entry names.',
+      );
     }
     names.add(entry.name);
     comparableNames.add(comparableName);
@@ -412,12 +442,15 @@ function buildValidatedEntryPlans(
     const { dataOffset } = validateLocalHeaderMatchesCentral(archive, entry);
     const dataEnd = dataOffset + entry.compressedSize;
     if (!Number.isSafeInteger(dataEnd) || dataEnd > archive.length) {
-      throw new ArchiveSafetyError('Archive entry data range is out of bounds.');
+      throw new ArchiveSafetyError('Archive entry data range is out of bounds.', 'corrupt');
     }
     const declaredSize = toBigIntSize(entry.uncompressedSize);
     budget.checkDeclaredSize(declaredSize);
     if (declaredSize > maxEntryBytes) {
-      throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
+      throw new ArchiveSafetyError(
+        'Archive declares an entry larger than the per-entry limit.',
+        'too-large',
+      );
     }
     plans.push({
       name: entry.name,
@@ -465,6 +498,7 @@ function toBigIntSize(size: number | undefined): bigint {
   if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) {
     throw new ArchiveSafetyError(
       'Archive entry declares an invalid size (must be a non-negative safe integer).',
+      'corrupt',
     );
   }
   return BigInt(size);
@@ -477,7 +511,10 @@ function assertEntryChunkWithinLimit(
 ): number {
   const nextSize = currentSize + chunkSize;
   if (!Number.isSafeInteger(nextSize) || BigInt(nextSize) > entryByteLimit) {
-    throw new ArchiveSafetyError('Archive entry expanded beyond the per-entry extraction limit.');
+    throw new ArchiveSafetyError(
+      'Archive entry expanded beyond the per-entry extraction limit.',
+      'too-large',
+    );
   }
   return nextSize;
 }
@@ -522,7 +559,7 @@ function createEntryDecoder(
 
   if (plan.method === 0) {
     if (plan.compressedSize !== plan.uncompressedSize) {
-      throw new ArchiveSafetyError('Stored archive entry sizes do not match.');
+      throw new ArchiveSafetyError('Stored archive entry sizes do not match.', 'corrupt');
     }
     return {
       push: acceptChunk,
@@ -541,6 +578,7 @@ function createEntryDecoder(
         if (error instanceof ArchiveSafetyError) throw error;
         throw new ArchiveSafetyError(
           `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
+          'corrupt',
         );
       }
     },
@@ -556,13 +594,17 @@ function createEntryDecoder(
         state.s.p < 0 ||
         state.s.p > 7
       ) {
-        throw new ArchiveSafetyError('Archive entry deflate consumption state is unavailable.');
+        throw new ArchiveSafetyError(
+          'Archive entry deflate consumption state is unavailable.',
+          'corrupt',
+        );
       }
       const rbytes = state.p.length;
       const rbits = state.s.p;
       if (rbytes !== (rbits === 0 ? 0 : 1)) {
         throw new ArchiveSafetyError(
           'Archive entry deflate stream does not consume its declared compressed size.',
+          'corrupt',
         );
       }
       validateDecodedEntry(plan, size, crc);
@@ -572,13 +614,16 @@ function createEntryDecoder(
 
 function validateDecodedEntry(plan: ValidatedEntryPlan, size: number, crc: number): void {
   if (plan.kind === 'directory' && size > 0) {
-    throw new ArchiveSafetyError('Archive directory entry contains data.');
+    throw new ArchiveSafetyError('Archive directory entry contains data.', 'corrupt');
   }
   if (size !== plan.uncompressedSize) {
-    throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${plan.path}`);
+    throw new ArchiveSafetyError(
+      `Archive entry size does not match its metadata: ${plan.path}`,
+      'corrupt',
+    );
   }
   if (((crc ^ 0xffffffff) >>> 0) !== plan.crc32) {
-    throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${plan.path}`);
+    throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${plan.path}`, 'corrupt');
   }
 }
 
@@ -624,7 +669,7 @@ async function readFileRange(file: File, start: number, length: number): Promise
     length < 0 ||
     start + length > file.size
   ) {
-    throw new ArchiveSafetyError('Archive structure points outside the selected file.');
+    throw new ArchiveSafetyError('Archive structure points outside the selected file.', 'corrupt');
   }
   return new Uint8Array(await file.slice(start, start + length).arrayBuffer());
 }
@@ -657,11 +702,12 @@ async function readCentralDirectoryEntriesFromFile(
   );
   const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   if (centralDirectoryEnd > eocdOffset || centralDirectoryEnd > file.size) {
-    throw new ArchiveSafetyError('Archive central directory is out of bounds.');
+    throw new ArchiveSafetyError('Archive central directory is out of bounds.', 'corrupt');
   }
   if (centralDirectoryEnd !== eocdOffset) {
     throw new ArchiveSafetyError(
       'Archive central directory must abut the end-of-central-directory record.',
+      'corrupt',
     );
   }
 
@@ -669,18 +715,18 @@ async function readCentralDirectoryEntriesFromFile(
   let offset = centralDirectoryOffset;
   while (offset < centralDirectoryEnd) {
     if (offset + 46 > centralDirectoryEnd) {
-      throw new ArchiveSafetyError('Archive central directory has a truncated record.');
+      throw new ArchiveSafetyError('Archive central directory has a truncated record.', 'corrupt');
     }
     const fixed = await readFileRange(file, offset, 46);
     if (readUint32(fixed, 0) !== CENTRAL_DIRECTORY_SIGNATURE) {
-      throw new ArchiveSafetyError('Archive central directory has an invalid record.');
+      throw new ArchiveSafetyError('Archive central directory has an invalid record.', 'corrupt');
     }
     const nameLength = readUint16(fixed, 28);
     const extraLength = readUint16(fixed, 30);
     const commentLength = readUint16(fixed, 32);
     const variableLength = nameLength + extraLength + commentLength;
     if (offset + 46 + variableLength > centralDirectoryEnd) {
-      throw new ArchiveSafetyError('Archive central directory has a truncated record.');
+      throw new ArchiveSafetyError('Archive central directory has a truncated record.', 'corrupt');
     }
     const variable = await readFileRange(file, offset + 46, variableLength);
     const name = UTF_8.decode(variable.subarray(0, nameLength));
@@ -705,7 +751,7 @@ async function readCentralDirectoryEntriesFromFile(
       );
     }
     if (entries.length >= maxEntries) {
-      throw new ArchiveSafetyError('Archive contains too many entries.');
+      throw new ArchiveSafetyError('Archive contains too many entries.', 'too-large');
     }
     entries.push({
       name,
@@ -720,7 +766,10 @@ async function readCentralDirectoryEntriesFromFile(
     offset += 46 + variableLength;
   }
   if (offset !== centralDirectoryEnd || entries.length !== entryCount) {
-    throw new ArchiveSafetyError('Archive central directory entry count is inconsistent.');
+    throw new ArchiveSafetyError(
+      'Archive central directory entry count is inconsistent.',
+      'corrupt',
+    );
   }
   return { entries, centralDirectoryOffset };
 }
@@ -731,7 +780,7 @@ async function validateLocalHeaderFromFile(
 ): Promise<ValidatedLocalHeader> {
   const fixed = await readFileRange(file, centralEntry.localHeaderOffset, 30);
   if (readUint32(fixed, 0) !== LOCAL_FILE_HEADER_SIGNATURE) {
-    throw new ArchiveSafetyError('Archive local header is missing or invalid.');
+    throw new ArchiveSafetyError('Archive local header is missing or invalid.', 'corrupt');
   }
   const localFlags = readUint16(fixed, 6);
   if ((localFlags & 0x0001) !== 0) {
@@ -751,31 +800,43 @@ async function validateLocalHeaderFromFile(
     nameLength + extraLength,
   );
   if (UTF_8.decode(variable.subarray(0, nameLength)) !== centralEntry.name) {
-    throw new ArchiveSafetyError('Archive local and central filenames do not match.');
+    throw new ArchiveSafetyError('Archive local and central filenames do not match.', 'corrupt');
   }
   if (readUint16(fixed, 8) !== centralEntry.compression) {
-    throw new ArchiveSafetyError('Archive local and central compression methods do not match.');
+    throw new ArchiveSafetyError(
+      'Archive local and central compression methods do not match.',
+      'corrupt',
+    );
   }
   const hasDataDescriptor = (localFlags & 0x0008) !== 0;
   if (hasDataDescriptor !== centralEntry.hasDataDescriptor) {
-    throw new ArchiveSafetyError('Archive local and central descriptor flags do not match.');
+    throw new ArchiveSafetyError(
+      'Archive local and central descriptor flags do not match.',
+      'corrupt',
+    );
   }
   if (!hasDataDescriptor) {
     if (readUint32(fixed, 14) !== centralEntry.crc32) {
-      throw new ArchiveSafetyError('Archive local and central CRC values do not match.');
+      throw new ArchiveSafetyError('Archive local and central CRC values do not match.', 'corrupt');
     }
     if (
       localCompressedSize !== centralEntry.compressedSize ||
       localUncompressedSize !== centralEntry.uncompressedSize
     ) {
-      throw new ArchiveSafetyError('Archive local and central size values do not match.');
+      throw new ArchiveSafetyError(
+        'Archive local and central size values do not match.',
+        'corrupt',
+      );
     }
   }
 
   const dataOffset = centralEntry.localHeaderOffset + 30 + nameLength + extraLength;
   const compressedDataEnd = dataOffset + centralEntry.compressedSize;
   if (compressedDataEnd > file.size) {
-    throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
+    throw new ArchiveSafetyError(
+      'Archive local record exceeds its central directory boundary.',
+      'corrupt',
+    );
   }
   if (!hasDataDescriptor) {
     return { dataOffset, recordEnd: compressedDataEnd };
@@ -795,7 +856,10 @@ async function validateLocalHeaderFromFile(
     return { dataOffset, recordEnd: compressedDataEnd + 16 };
   }
 
-  throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
+  throw new ArchiveSafetyError(
+    'Archive data descriptor does not match the central directory.',
+    'corrupt',
+  );
 }
 
 async function buildValidatedEntryPlansFromFile(
@@ -813,7 +877,9 @@ async function buildValidatedEntryPlansFromFile(
     }
     const comparableName = foldArchivePathForComparison(entry.name);
     if (comparableNames.has(comparableName)) {
-      throw new ArchiveSafetyError('Archive central directory contains case-colliding entry names.');
+      throw new ArchiveSafetyError(
+        'Archive central directory contains case-colliding entry names.',
+      );
     }
     names.add(entry.name);
     comparableNames.add(comparableName);
@@ -821,12 +887,15 @@ async function buildValidatedEntryPlansFromFile(
     const { dataOffset } = await validateLocalHeaderFromFile(file, entry);
     const dataEnd = dataOffset + entry.compressedSize;
     if (!Number.isSafeInteger(dataEnd) || dataEnd > file.size) {
-      throw new ArchiveSafetyError('Archive entry data range is out of bounds.');
+      throw new ArchiveSafetyError('Archive entry data range is out of bounds.', 'corrupt');
     }
     const declaredSize = toBigIntSize(entry.uncompressedSize);
     budget.checkDeclaredSize(declaredSize);
     if (declaredSize > maxEntryBytes) {
-      throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
+      throw new ArchiveSafetyError(
+        'Archive declares an entry larger than the per-entry limit.',
+        'too-large',
+      );
     }
     plans.push({
       name: entry.name,

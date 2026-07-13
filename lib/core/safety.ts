@@ -18,10 +18,15 @@ export type ArchiveLimits = {
 
 export type ArchiveEntryKind = 'file' | 'directory' | 'symlink' | 'special';
 
+export type ArchiveSafetyCategory = 'corrupt' | 'unsafe-path' | 'too-large' | 'unsupported-method';
+
 export class ArchiveSafetyError extends Error {
-  constructor(message: string) {
+  readonly category?: ArchiveSafetyCategory;
+
+  constructor(message: string, category?: ArchiveSafetyCategory) {
     super(message);
     this.name = 'ArchiveSafetyError';
+    this.category = category;
   }
 }
 
@@ -53,22 +58,31 @@ export function safeArchivePath(name: string, root = '/extract'): string {
       return code !== undefined && (code <= 31 || code === 127);
     })
   ) {
-    throw new ArchiveSafetyError('Archive entry contains an unsafe filename.');
+    throw new ArchiveSafetyError('Archive entry contains an unsafe filename.', 'unsafe-path');
   }
   if (name.startsWith('/') || name.startsWith('//') || /^[a-zA-Z]:/u.test(name)) {
-    throw new ArchiveSafetyError('Archive entry uses an absolute path.');
+    throw new ArchiveSafetyError('Archive entry uses an absolute path.', 'unsafe-path');
   }
 
   const path = name.endsWith('/') ? name.slice(0, -1) : name;
   const parts = path.split('/');
   if (!path || parts.some((part) => part === '')) {
-    throw new ArchiveSafetyError('Archive entry contains an ambiguous path segment.');
+    throw new ArchiveSafetyError(
+      'Archive entry contains an ambiguous path segment.',
+      'unsafe-path',
+    );
   }
   if (parts.some((part) => part === '..')) {
-    throw new ArchiveSafetyError('Archive entry tries to leave the extraction folder.');
+    throw new ArchiveSafetyError(
+      'Archive entry tries to leave the extraction folder.',
+      'unsafe-path',
+    );
   }
   if (parts.some((part) => part === '.')) {
-    throw new ArchiveSafetyError('Archive entry contains an ambiguous path segment.');
+    throw new ArchiveSafetyError(
+      'Archive entry contains an ambiguous path segment.',
+      'unsafe-path',
+    );
   }
   if (
     parts.some(
@@ -80,13 +94,19 @@ export function safeArchivePath(name: string, root = '/extract'): string {
         part.endsWith(' '),
     )
   ) {
-    throw new ArchiveSafetyError('Archive entry contains a filename that is unsafe on Windows.');
+    throw new ArchiveSafetyError(
+      'Archive entry contains a filename that is unsafe on Windows.',
+      'unsafe-path',
+    );
   }
 
   const normalizedRoot = root.replace(/\/+$/u, '');
   const resolved = `${normalizedRoot}/${parts.join('/')}`;
   if (resolved !== normalizedRoot && !resolved.startsWith(`${normalizedRoot}/`)) {
-    throw new ArchiveSafetyError('Archive entry resolves outside the extraction folder.');
+    throw new ArchiveSafetyError(
+      'Archive entry resolves outside the extraction folder.',
+      'unsafe-path',
+    );
   }
   return parts.join('/');
 }
@@ -145,25 +165,25 @@ export class ArchiveSafetyBudget {
       throw new ArchiveSafetyError('Archive recursion depth is invalid.');
     }
     if (recursionDepth > this.limits.maxRecursionDepth) {
-      throw new ArchiveSafetyError('Nested archive extraction is disabled.');
+      throw new ArchiveSafetyError('Nested archive extraction is disabled.', 'too-large');
     }
     const safePath = safeArchivePath(name);
     const depth = safePath.split('/').filter(Boolean).length;
     if (depth > this.limits.maxPathDepth) {
-      throw new ArchiveSafetyError('Archive entry path is too deep.');
+      throw new ArchiveSafetyError('Archive entry path is too deep.', 'too-large');
     }
     if (TEXT_ENCODER.encode(safePath).byteLength > this.limits.maxPathBytes) {
-      throw new ArchiveSafetyError('Archive entry path is too long.');
+      throw new ArchiveSafetyError('Archive entry path is too long.', 'unsafe-path');
     }
     if (this.entries >= this.limits.maxEntries) {
-      throw new ArchiveSafetyError('Archive contains too many entries.');
+      throw new ArchiveSafetyError('Archive contains too many entries.', 'too-large');
     }
     if (this.paths.has(safePath)) {
-      throw new ArchiveSafetyError('Archive contains duplicate entry paths.');
+      throw new ArchiveSafetyError('Archive contains duplicate entry paths.', 'unsafe-path');
     }
     const comparablePath = foldArchivePathForComparison(safePath);
     if (this.comparablePaths.has(comparablePath)) {
-      throw new ArchiveSafetyError('Archive contains case-colliding entry paths.');
+      throw new ArchiveSafetyError('Archive contains case-colliding entry paths.', 'unsafe-path');
     }
     this.entries += 1;
     this.paths.add(safePath);
@@ -174,11 +194,17 @@ export class ArchiveSafetyBudget {
   checkDeclaredSize(size: bigint): void {
     this.assertWithinTime();
     if (size < 0n || size > this.limits.maxEmittedBytes) {
-      throw new ArchiveSafetyError('Archive declares an entry larger than the extraction limit.');
+      throw new ArchiveSafetyError(
+        'Archive declares an entry larger than the extraction limit.',
+        'too-large',
+      );
     }
     const declaredBytes = this.declaredBytes + size;
     if (declaredBytes > this.limits.maxEmittedBytes) {
-      throw new ArchiveSafetyError('Archive declared sizes exceed the extraction limit.');
+      throw new ArchiveSafetyError(
+        'Archive declared sizes exceed the extraction limit.',
+        'too-large',
+      );
     }
     this.declaredBytes = declaredBytes;
   }
@@ -192,7 +218,7 @@ export class ArchiveSafetyBudget {
     if (increment < 0n) throw new ArchiveSafetyError('Invalid emitted byte count.');
     const emittedBytes = this.emittedBytes + increment;
     if (emittedBytes > this.limits.maxEmittedBytes) {
-      throw new ArchiveSafetyError('Archive expanded beyond the extraction limit.');
+      throw new ArchiveSafetyError('Archive expanded beyond the extraction limit.', 'too-large');
     }
     this.emittedBytes = emittedBytes;
   }
@@ -202,7 +228,7 @@ export class ArchiveSafetyBudget {
       throw new ArchiveSafetyError('Archive extraction time is invalid.');
     }
     if (now - this.startedAt > this.limits.maxWallTimeMs) {
-      throw new ArchiveSafetyError('Archive extraction took too long.');
+      throw new ArchiveSafetyError('Archive extraction took too long.', 'too-large');
     }
   }
 }
