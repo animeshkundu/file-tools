@@ -37,6 +37,17 @@ jobs:
       - name: Build Chrome extension
         run: npm run build
 
+      - name: Accessibility gate (WCAG 2.1 AA)
+        run: |
+          npx serve .output/chrome-mv3 -l 4173 --no-clipboard > /tmp/serve.log 2>&1 &
+          for i in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:4173/app.html > /dev/null; then
+              break
+            fi
+            sleep 1
+          done
+          node tests/a11y/run-axe-gate.mjs http://127.0.0.1:4173/app.html
+
       - name: Build Firefox extension
         run: npm run build:firefox
 
