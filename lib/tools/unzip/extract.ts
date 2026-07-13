@@ -273,7 +273,8 @@ function assertEntryChunkWithinLimit(
   declaredSize: number,
 ): number {
   const nextSize = currentSize + chunkSize;
-  const effectiveLimit = BigInt(declaredSize) < maxEntryBytes ? BigInt(declaredSize) : maxEntryBytes;
+  const declaredSizeAsBigInt = BigInt(declaredSize);
+  const effectiveLimit = declaredSizeAsBigInt < maxEntryBytes ? declaredSizeAsBigInt : maxEntryBytes;
   if (!Number.isSafeInteger(nextSize) || BigInt(nextSize) > effectiveLimit) {
     throw new ArchiveSafetyError('Archive entry expanded beyond the per-entry extraction limit.');
   }
