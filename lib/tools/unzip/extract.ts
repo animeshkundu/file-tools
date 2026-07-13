@@ -3,6 +3,7 @@ import {
   ArchiveSafetyBudget,
   ArchiveSafetyError,
   DEFAULT_ARCHIVE_LIMITS,
+  foldArchivePathForComparison,
   type ArchiveEntryKind,
   type ArchiveLimits,
 } from '../../core/safety';
@@ -203,7 +204,7 @@ function buildCentralDirectoryIndex(archive: Uint8Array): Map<string, CentralDir
     if (index.has(entry.name)) {
       throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
     }
-    const comparableName = entry.name.normalize('NFC').toLowerCase();
+    const comparableName = foldArchivePathForComparison(entry.name);
     if (comparableNames.has(comparableName)) {
       throw new ArchiveSafetyError(
         'Archive central directory contains case-colliding entry names.',
@@ -269,9 +270,11 @@ function assertEntryChunkWithinLimit(
   currentSize: number,
   chunkSize: number,
   maxEntryBytes: bigint,
+  declaredSize: number,
 ): number {
   const nextSize = currentSize + chunkSize;
-  if (!Number.isSafeInteger(nextSize) || BigInt(nextSize) > maxEntryBytes) {
+  const effectiveLimit = BigInt(declaredSize) < maxEntryBytes ? BigInt(declaredSize) : maxEntryBytes;
+  if (!Number.isSafeInteger(nextSize) || BigInt(nextSize) > effectiveLimit) {
     throw new ArchiveSafetyError('Archive entry expanded beyond the per-entry extraction limit.');
   }
   return nextSize;
@@ -333,7 +336,12 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
             `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, maxEntryBytes);
+        const nextSize = assertEntryChunkWithinLimit(
+          size,
+          chunk.byteLength,
+          maxEntryBytes,
+          centralEntry.uncompressedSize,
+        );
         budget.addEmittedBytes(chunk.byteLength);
         if (chunk.byteLength > 0) {
           chunks.push(chunk);
@@ -509,7 +517,7 @@ export async function extractZipFile(
     if (centralEntriesByName.has(entry.name)) {
       throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
     }
-    const comparableName = entry.name.normalize('NFC').toLowerCase();
+    const comparableName = foldArchivePathForComparison(entry.name);
     if (comparableNames.has(comparableName)) {
       throw new ArchiveSafetyError(
         'Archive central directory contains case-colliding entry names.',
@@ -564,7 +572,12 @@ export async function extractZipFile(
             `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, maxEntryBytes);
+        const nextSize = assertEntryChunkWithinLimit(
+          size,
+          chunk.byteLength,
+          maxEntryBytes,
+          centralEntry.uncompressedSize,
+        );
         budget.addEmittedBytes(chunk.byteLength);
         if (chunk.byteLength > 0) {
           chunks.push(chunk);

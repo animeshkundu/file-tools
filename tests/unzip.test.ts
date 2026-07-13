@@ -178,6 +178,18 @@ describe('extractZip', () => {
     ]);
   });
 
+  it('rejects NTFS case-fold central-directory collisions', async () => {
+    const archive = zipSync({
+      'µ.txt': strToU8('micro sign'),
+      'μ.txt': strToU8('greek mu'),
+    });
+
+    expect(() => extractZip(archive)).toThrow(/case-colliding entry names/u);
+    await expect(
+      extractZipFile(fileFromBytes(archive, 'collision.zip'), { onEntry: vi.fn() }),
+    ).rejects.toThrow(/case-colliding entry names/u);
+  });
+
   it('enforces the emitted byte cap while extracting', () => {
     const archive = zipSync({ 'large.txt': strToU8('12345') });
     expect(() => extractZip(archive, { maxEmittedBytes: 4n })).toThrow(/extraction limit/u);
@@ -203,6 +215,45 @@ describe('extractZip', () => {
   it('enforces the per-entry cap before retaining an oversized entry', () => {
     const archive = zipSync({ 'large.txt': strToU8('12345') });
     expect(() => extractZip(archive, { maxEntryBytes: 4n })).toThrow(/per-entry/u);
+  });
+
+  it('caps per-entry emission at the declared size before full inflation', async () => {
+    const archive = patchDeclaredUncompressedSizes(
+      zipSync({ 'large.txt': strToU8('abcdefghijklmnop') }),
+      10,
+    );
+
+    const originalPush = UnzipInflate.prototype.push;
+    const makeStub = (afterFirstChunk: { value: boolean }, afterSecondChunk: { value: boolean }) =>
+      vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
+        this: UnzipInflate,
+        data,
+        final,
+      ) {
+        this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5, 6), false);
+        afterFirstChunk.value = true;
+        this.ondata(null, Uint8Array.of(7, 8, 9, 10, 11, 12), final);
+        afterSecondChunk.value = true;
+        return originalPush.call(this, data, final);
+      });
+
+    const extractZipAfterFirstChunk = { value: false };
+    const extractZipAfterSecondChunk = { value: false };
+    makeStub(extractZipAfterFirstChunk, extractZipAfterSecondChunk);
+    expect(() => extractZip(archive)).toThrow(/per-entry/u);
+    expect(extractZipAfterFirstChunk.value).toBe(true);
+    expect(extractZipAfterSecondChunk.value).toBe(false);
+
+    vi.restoreAllMocks();
+
+    const extractZipFileAfterFirstChunk = { value: false };
+    const extractZipFileAfterSecondChunk = { value: false };
+    makeStub(extractZipFileAfterFirstChunk, extractZipFileAfterSecondChunk);
+    await expect(
+      extractZipFile(fileFromBytes(archive, 'declared-size-cap.zip'), { onEntry: vi.fn() }),
+    ).rejects.toThrow(/per-entry/u);
+    expect(extractZipFileAfterFirstChunk.value).toBe(true);
+    expect(extractZipFileAfterSecondChunk.value).toBe(false);
   });
 
   it('streams directory records without accepting hidden payload data', () => {

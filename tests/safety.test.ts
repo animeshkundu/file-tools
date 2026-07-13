@@ -29,12 +29,12 @@ describe('safeArchivePath', () => {
     expect(safeArchivePath('folder/')).toBe('folder');
   });
 
-  it.each(['con', 'COM1.txt', 'folder/Lpt9.log'])(
+  it.each(['con', 'COM1.txt', 'folder/Lpt9.log', 'CON .txt', 'folder/nul  .log'])(
     'rejects Windows reserved device name %s',
     (path) => expect(() => safeArchivePath(path)).toThrow(/unsafe on Windows/u),
   );
 
-  it.each(['report\u202etxt.exe', 'folder/\u2066safe.txt'])(
+  it.each(['report\u202etxt.exe', 'folder/\u2066safe.txt', 'report\u2028txt.exe', 'report\u2029txt.exe'])(
     'rejects bidi override characters in %s',
     (path) => expect(() => safeArchivePath(path)).toThrow(/unsafe filename/u),
   );
@@ -108,6 +108,12 @@ describe('ArchiveSafetyBudget', () => {
     const collisionBudget = new ArchiveSafetyBudget();
     collisionBudget.addEntry('Readme.txt', 'file');
     expect(() => collisionBudget.addEntry('README.TXT', 'file')).toThrow(/colliding/u);
+  });
+
+  it('rejects NTFS case-fold collisions', () => {
+    const budget = new ArchiveSafetyBudget();
+    budget.addEntry('µ.txt', 'file');
+    expect(() => budget.addEntry('μ.txt', 'file')).toThrow(/colliding/u);
   });
 
   it('enforces the wall-time cap', () => {
