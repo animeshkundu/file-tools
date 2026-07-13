@@ -3,8 +3,15 @@ import process from 'node:process';
 
 const MANIFEST_PATHS = ['.output/chrome-mv3/manifest.json', '.output/firefox-mv3/manifest.json'];
 
-const ASCII_WHITESPACE = /[ \t\r\n\f]+/u;
 const ALLOWED_ASCII_WHITESPACE = new Set([9, 10, 12, 13, 32]);
+// Serialized CSP here is limited to ASCII whitespace separators plus directive/source
+// tokens built from RFC 7230 tchar-style bytes and URL punctuation used by CSP source
+// expressions, with `;` as the directive delimiter.
+const ALLOWED_CSP_GRAMMAR_CHARACTERS = new Set(
+  [...";ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~:/?[]=@"].map(
+    (character) => character.charCodeAt(0),
+  ),
+);
 
 const REQUIRED_DIRECTIVES = new Map([
   ['default-src', ["'none'"]],
@@ -18,31 +25,54 @@ const REQUIRED_DIRECTIVES = new Map([
 ]);
 
 function parsePolicy(policy) {
-  for (const character of policy) {
-    const codePoint = character.codePointAt(0);
-    if (codePoint > 127) {
-      throw new Error('CSP contains a non-ASCII character');
-    }
-
-    const isAsciiControl = codePoint < 32 || codePoint === 127;
-
-    if (isAsciiControl && !ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
-      throw new Error('CSP contains a disallowed ASCII control character');
-    }
-  }
-
   const directives = new Map();
-  for (const segment of policy.split(';')) {
-    const tokens = segment.split(ASCII_WHITESPACE).filter(Boolean);
-    if (tokens.length === 0) continue;
+  let tokens = [];
+  let currentToken = '';
+
+  const flushToken = () => {
+    if (currentToken.length === 0) {
+      return;
+    }
+
+    tokens.push(currentToken);
+    currentToken = '';
+  };
+
+  const flushDirective = () => {
+    flushToken();
+    if (tokens.length === 0) {
+      return;
+    }
 
     const [name, ...sources] = tokens;
     if (directives.has(name)) {
       throw new Error(`CSP contains duplicate directive ${name}`);
     }
+
     directives.set(name, sources);
+    tokens = [];
+  };
+
+  for (const character of policy) {
+    const codePoint = character.codePointAt(0);
+    if (character === ';') {
+      flushDirective();
+      continue;
+    }
+
+    if (ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
+      flushToken();
+      continue;
+    }
+
+    if (!ALLOWED_CSP_GRAMMAR_CHARACTERS.has(codePoint)) {
+      throw new Error('CSP contains a disallowed character outside the ASCII token allowlist');
+    }
+
+    currentToken += character;
   }
 
+  flushDirective();
   return directives;
 }
 
