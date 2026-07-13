@@ -1,6 +1,10 @@
 # Third-party software
 
-Exact shipped runtime dependency BOM for version 0.1.0. Versions are pinned in `package-lock.json`.
+Exact shipped runtime dependency BOM for version 0.1.0. Versions are pinned in `package.json` and `package-lock.json`.
+
+## How to refresh
+
+After changing dependencies, run `npm install`, then update the runtime package table below from `package-lock.json` so every non-dev package keeps its exact installed version and SPDX license.
 
 | Package      | Version | SPDX license | Purpose                                                |
 | ------------ | ------: | ------------ | ------------------------------------------------------ |
@@ -15,11 +19,11 @@ No runtime package in the current build ships a WASM binary.
 
 ## E2E test tools (devDependencies — not bundled into the shipped extension)
 
-| Package                      | Version | SPDX license | Purpose                                               |
-| ---------------------------- | ------: | ------------ | ----------------------------------------------------- |
-| `@playwright/test`           |  1.61.1 | Apache-2.0   | E2E test runner and assertions                        |
-| `selenium-webdriver`         |  4.46.0 | Apache-2.0   | Firefox WebDriver client for moz-extension:// E2E     |
-| `@types/selenium-webdriver`  |  4.35.6 | MIT          | TypeScript type declarations for selenium-webdriver   |
+| Package                     | Version | SPDX license | Purpose                                             |
+| --------------------------- | ------: | ------------ | --------------------------------------------------- |
+| `@playwright/test`          |  1.61.1 | Apache-2.0   | E2E test runner and assertions                      |
+| `selenium-webdriver`        |  4.46.0 | Apache-2.0   | Firefox WebDriver client for moz-extension:// E2E   |
+| `@types/selenium-webdriver` |  4.35.6 | MIT          | TypeScript type declarations for selenium-webdriver |
 
 ## Formats deferred for licensing reasons
 
