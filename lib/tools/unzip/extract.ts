@@ -134,6 +134,8 @@ function parseEndOfCentralDirectory(
   archive: Uint8Array,
   eocdOffset: number,
 ): EndOfCentralDirectoryRecord {
+  // EOCD disk number (+4) and central-directory-start disk (+6) must both be zero for
+  // single-disk archives. Any non-zero value indicates a multi-disk ZIP, which is unsupported.
   if (readUint16(archive, eocdOffset + 4) !== 0 || readUint16(archive, eocdOffset + 6) !== 0) {
     throw new ArchiveSafetyError('Archive spans multiple disks and cannot be extracted.');
   }
@@ -142,6 +144,8 @@ function parseEndOfCentralDirectory(
   const entryCount = readUint16(archive, eocdOffset + 10);
   const centralDirectorySize = readUint32(archive, eocdOffset + 12);
   const centralDirectoryOffset = readUint32(archive, eocdOffset + 16);
+  // 0xffff in either EOCD count field is the classic Zip64 sentinel and requires structures this
+  // extractor deliberately rejects instead of attempting to parse partially.
   if (
     entriesOnThisDisk === 0xffff ||
     entryCount === 0xffff ||

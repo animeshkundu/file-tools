@@ -230,15 +230,15 @@ function makeStoredLocalFileRecord({
   name,
   data,
   flags = 0,
-  localCompressedSize = data.byteLength,
-  localUncompressedSize = data.byteLength,
+  localHeaderCompressedSize = data.byteLength,
+  localHeaderUncompressedSize = data.byteLength,
   useDataDescriptor = false,
 }: {
   name: string;
   data: Uint8Array;
   flags?: number;
-  localCompressedSize?: number;
-  localUncompressedSize?: number;
+  localHeaderCompressedSize?: number;
+  localHeaderUncompressedSize?: number;
   useDataDescriptor?: boolean;
 }): Uint8Array {
   const nameBytes = strToU8(name);
@@ -250,8 +250,8 @@ function makeStoredLocalFileRecord({
   writeUint16(bytes, 6, flags);
   writeUint16(bytes, 8, 0);
   writeUint32(bytes, 14, entryCrc32);
-  writeUint32(bytes, 18, localCompressedSize);
-  writeUint32(bytes, 22, localUncompressedSize);
+  writeUint32(bytes, 18, localHeaderCompressedSize);
+  writeUint32(bytes, 22, localHeaderUncompressedSize);
   writeUint16(bytes, 26, nameBytes.byteLength);
   bytes.set(nameBytes, 30);
   bytes.set(data, 30 + nameBytes.byteLength);
@@ -270,15 +270,15 @@ function makeCentralDirectoryRecord({
   data,
   localHeaderOffset,
   flags = 0,
-  centralCompressedSize = data.byteLength,
-  centralUncompressedSize = data.byteLength,
+  centralHeaderCompressedSize = data.byteLength,
+  centralHeaderUncompressedSize = data.byteLength,
 }: {
   name: string;
   data: Uint8Array;
   localHeaderOffset: number;
   flags?: number;
-  centralCompressedSize?: number;
-  centralUncompressedSize?: number;
+  centralHeaderCompressedSize?: number;
+  centralHeaderUncompressedSize?: number;
 }): Uint8Array {
   const nameBytes = strToU8(name);
   const bytes = new Uint8Array(46 + nameBytes.byteLength);
@@ -288,8 +288,8 @@ function makeCentralDirectoryRecord({
   writeUint16(bytes, 8, flags);
   writeUint16(bytes, 10, 0);
   writeUint32(bytes, 16, crc32(data));
-  writeUint32(bytes, 20, centralCompressedSize);
-  writeUint32(bytes, 24, centralUncompressedSize);
+  writeUint32(bytes, 20, centralHeaderCompressedSize);
+  writeUint32(bytes, 24, centralHeaderUncompressedSize);
   writeUint16(bytes, 28, nameBytes.byteLength);
   writeUint32(bytes, 42, localHeaderOffset);
   bytes.set(nameBytes, 46);
@@ -323,8 +323,8 @@ function makeDuplicateNameDataDescriptorLocalSentinelArchive(): Uint8Array {
     name: 'a.txt',
     data: firstPayload,
     flags: 0x0008,
-    localCompressedSize: 0xffffffff,
-    localUncompressedSize: 0xffffffff,
+    localHeaderCompressedSize: 0xffffffff,
+    localHeaderUncompressedSize: 0xffffffff,
     useDataDescriptor: true,
   });
   const secondRecordOffset = firstRecord.byteLength;
@@ -349,8 +349,8 @@ function makeDataDescriptorLocalSentinelArchive(): Uint8Array {
     name: 'a.txt',
     data: payload,
     flags: 0x0008,
-    localCompressedSize: 0xffffffff,
-    localUncompressedSize: 0xffffffff,
+    localHeaderCompressedSize: 0xffffffff,
+    localHeaderUncompressedSize: 0xffffffff,
     useDataDescriptor: true,
   });
   const centralDirectory = makeCentralDirectoryRecord({
