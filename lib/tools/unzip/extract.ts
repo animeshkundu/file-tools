@@ -546,8 +546,20 @@ function createEntryDecoder(
     },
     finish: () => {
       const state = inflater as unknown as InflateConsumptionState;
-      const rbytes = state.p ? state.p.length : 0;
-      const rbits = state.s ? state.s.p || 0 : 0;
+      // The consume-exact check reads fflate 0.8.3 internals (pinned version).
+      // Fail CLOSED: if the state shape is ever unexpected (e.g. a dependency
+      // bump renames these fields), reject rather than silently skip the check.
+      if (
+        !(state.p instanceof Uint8Array) ||
+        typeof state.s?.p !== 'number' ||
+        !Number.isInteger(state.s.p) ||
+        state.s.p < 0 ||
+        state.s.p > 7
+      ) {
+        throw new ArchiveSafetyError('Archive entry deflate consumption state is unavailable.');
+      }
+      const rbytes = state.p.length;
+      const rbits = state.s.p;
       if (rbytes !== (rbits === 0 ? 0 : 1)) {
         throw new ArchiveSafetyError(
           'Archive entry deflate stream does not consume its declared compressed size.',

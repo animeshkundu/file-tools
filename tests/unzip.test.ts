@@ -940,6 +940,47 @@ describe('archive parse hardening', () => {
     expect(trailing.p?.length ?? 0).not.toBe((trailing.s?.p || 0) === 0 ? 0 : 1);
   });
 
+  it('accumulates trailing bytes across multiple pushes so multi-chunk consume-exactly holds', () => {
+    // A large entry is decoded via the file path by pushing the validated slice
+    // to Inflate in bounded chunks. If the deflate self-terminates in an early
+    // chunk, the trailing bytes in later chunks must remain counted as
+    // unconsumed (fflate must not silently drop post-final-block pushes), so the
+    // consume-exactly rule still rejects them.
+    const compressed = deflateSync(strToU8('a'));
+    const slice = concatBytes([compressed, new Uint8Array(1000)]);
+    const inflater = new Inflate(() => undefined) as unknown as {
+      push: (chunk: Uint8Array, final: boolean) => void;
+      p?: Uint8Array;
+      s?: { p?: number };
+    };
+    const chunkSize = 256;
+    for (let offset = 0; offset < slice.length; offset += chunkSize) {
+      const end = Math.min(offset + chunkSize, slice.length);
+      inflater.push(slice.subarray(offset, end), end === slice.length);
+    }
+    expect(inflater.p?.length ?? 0).toBeGreaterThan(1);
+    expect(inflater.p?.length ?? 0).not.toBe((inflater.s?.p || 0) === 0 ? 0 : 1);
+  });
+
+  it('fails closed when the fflate consumption state shape is unavailable', () => {
+    const original = Inflate.prototype.push;
+    const spy = vi.spyOn(Inflate.prototype, 'push').mockImplementation(function (
+      this: Inflate,
+      chunk: Uint8Array,
+      final?: boolean,
+    ) {
+      original.call(this, chunk, final);
+      // Simulate a future fflate whose internal consumption state is no longer
+      // the expected shape; the decoder must reject rather than skip the check.
+      (this as unknown as { s?: unknown }).s = undefined;
+    });
+    try {
+      expect(() => extractZip(makeDeflatedArchive())).toThrow(/consumption state is unavailable/u);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('extracts a standard exact data-descriptor deflate stream on both paths', async () => {
     await expectExtractsOnBothPaths(
       makeDataDescriptorDeflatedArchive(),
