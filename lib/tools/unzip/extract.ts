@@ -63,6 +63,12 @@ type CentralDirectoryIndex = {
   entriesInLocalOrder: CentralDirectoryEntry[];
 };
 
+type EndOfCentralDirectoryRecord = {
+  entryCount: number;
+  centralDirectorySize: number;
+  centralDirectoryOffset: number;
+};
+
 function readUint16(bytes: Uint8Array, offset: number): number {
   if (offset < 0 || offset + 2 > bytes.length) {
     throw new ArchiveSafetyError('Archive structure is truncated.');
@@ -124,12 +130,20 @@ function findEndOfCentralDirectory(archive: Uint8Array): number {
   throw new ArchiveSafetyError('Archive is missing end-of-central-directory metadata.');
 }
 
-function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryMetadata {
-  const eocdOffset = findEndOfCentralDirectory(archive);
+function parseEndOfCentralDirectory(
+  archive: Uint8Array,
+  eocdOffset: number,
+): EndOfCentralDirectoryRecord {
+  if (readUint16(archive, eocdOffset + 4) !== 0 || readUint16(archive, eocdOffset + 6) !== 0) {
+    throw new ArchiveSafetyError('Archive spans multiple disks and cannot be extracted.');
+  }
+
+  const entriesOnThisDisk = readUint16(archive, eocdOffset + 8);
   const entryCount = readUint16(archive, eocdOffset + 10);
   const centralDirectorySize = readUint32(archive, eocdOffset + 12);
   const centralDirectoryOffset = readUint32(archive, eocdOffset + 16);
   if (
+    entriesOnThisDisk === 0xffff ||
     entryCount === 0xffff ||
     centralDirectorySize === 0xffffffff ||
     centralDirectoryOffset === 0xffffffff
@@ -139,6 +153,28 @@ function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryMetad
       'Archive uses Zip64 extensions and cannot be extracted.',
     );
   }
+
+  return { entryCount, centralDirectorySize, centralDirectoryOffset };
+}
+
+function assertLocalHeaderSizesAreNotZip64(
+  compressedSize: number,
+  uncompressedSize: number,
+): void {
+  if (compressedSize === 0xffffffff || uncompressedSize === 0xffffffff) {
+    throw new ArchiveUnsupportedError(
+      'zip64',
+      'Archive uses Zip64 extensions and cannot be extracted.',
+    );
+  }
+}
+
+function readCentralDirectoryEntries(archive: Uint8Array): CentralDirectoryMetadata {
+  const eocdOffset = findEndOfCentralDirectory(archive);
+  const { entryCount, centralDirectorySize, centralDirectoryOffset } = parseEndOfCentralDirectory(
+    archive,
+    eocdOffset,
+  );
   const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   if (centralDirectoryEnd > eocdOffset || centralDirectoryEnd > archive.length) {
     throw new ArchiveSafetyError('Archive central directory is out of bounds.');
@@ -236,6 +272,7 @@ function validateLocalHeaderMatchesCentral(
       'Archive contains an encrypted entry and cannot be extracted.',
     );
   }
+  assertLocalHeaderSizesAreNotZip64(localCompressedSize, localUncompressedSize);
 
   const localName = archive.subarray(localNameStart, localNameEnd);
   if (UTF_8.decode(localName) !== centralEntry.name) {
@@ -573,19 +610,10 @@ async function readCentralDirectoryEntriesFromFile(
       );
     }
   }
-  const entryCount = readUint16(tail, relativeEocdOffset + 10);
-  const centralDirectorySize = readUint32(tail, relativeEocdOffset + 12);
-  const centralDirectoryOffset = readUint32(tail, relativeEocdOffset + 16);
-  if (
-    entryCount === 0xffff ||
-    centralDirectorySize === 0xffffffff ||
-    centralDirectoryOffset === 0xffffffff
-  ) {
-    throw new ArchiveUnsupportedError(
-      'zip64',
-      'Archive uses Zip64 extensions and cannot be extracted.',
-    );
-  }
+  const { entryCount, centralDirectorySize, centralDirectoryOffset } = parseEndOfCentralDirectory(
+    tail,
+    relativeEocdOffset,
+  );
   const centralDirectoryEnd = centralDirectoryOffset + centralDirectorySize;
   if (centralDirectoryEnd > eocdOffset || centralDirectoryEnd > file.size) {
     throw new ArchiveSafetyError('Archive central directory is out of bounds.');
@@ -671,6 +699,9 @@ async function validateLocalHeaderFromFile(
       'Archive contains an encrypted entry and cannot be extracted.',
     );
   }
+  const localCompressedSize = readUint32(fixed, 18);
+  const localUncompressedSize = readUint32(fixed, 22);
+  assertLocalHeaderSizesAreNotZip64(localCompressedSize, localUncompressedSize);
   const nameLength = readUint16(fixed, 26);
   const extraLength = readUint16(fixed, 28);
   const variable = await readFileRange(
@@ -693,8 +724,8 @@ async function validateLocalHeaderFromFile(
       throw new ArchiveSafetyError('Archive local and central CRC values do not match.');
     }
     if (
-      readUint32(fixed, 18) !== centralEntry.compressedSize ||
-      readUint32(fixed, 22) !== centralEntry.uncompressedSize
+      localCompressedSize !== centralEntry.compressedSize ||
+      localUncompressedSize !== centralEntry.uncompressedSize
     ) {
       throw new ArchiveSafetyError('Archive local and central size values do not match.');
     }

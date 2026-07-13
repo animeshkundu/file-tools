@@ -215,6 +215,165 @@ function makeZip64LocatorBeforeTailArchive(): Uint8Array {
   return archive;
 }
 
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const totalLength = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const bytes = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.byteLength;
+  }
+  return bytes;
+}
+
+function makeStoredLocalFileRecord({
+  name,
+  data,
+  flags = 0,
+  localCompressedSize = data.byteLength,
+  localUncompressedSize = data.byteLength,
+  useDataDescriptor = false,
+}: {
+  name: string;
+  data: Uint8Array;
+  flags?: number;
+  localCompressedSize?: number;
+  localUncompressedSize?: number;
+  useDataDescriptor?: boolean;
+}): Uint8Array {
+  const nameBytes = strToU8(name);
+  const descriptorLength = useDataDescriptor ? 16 : 0;
+  const bytes = new Uint8Array(30 + nameBytes.byteLength + data.byteLength + descriptorLength);
+  const entryCrc32 = crc32(data);
+  writeUint32(bytes, 0, 0x04034b50);
+  writeUint16(bytes, 4, 20);
+  writeUint16(bytes, 6, flags);
+  writeUint16(bytes, 8, 0);
+  writeUint32(bytes, 14, entryCrc32);
+  writeUint32(bytes, 18, localCompressedSize);
+  writeUint32(bytes, 22, localUncompressedSize);
+  writeUint16(bytes, 26, nameBytes.byteLength);
+  bytes.set(nameBytes, 30);
+  bytes.set(data, 30 + nameBytes.byteLength);
+  if (useDataDescriptor) {
+    const descriptorOffset = 30 + nameBytes.byteLength + data.byteLength;
+    writeUint32(bytes, descriptorOffset, 0x08074b50);
+    writeUint32(bytes, descriptorOffset + 4, entryCrc32);
+    writeUint32(bytes, descriptorOffset + 8, data.byteLength);
+    writeUint32(bytes, descriptorOffset + 12, data.byteLength);
+  }
+  return bytes;
+}
+
+function makeCentralDirectoryRecord({
+  name,
+  data,
+  localHeaderOffset,
+  flags = 0,
+  centralCompressedSize = data.byteLength,
+  centralUncompressedSize = data.byteLength,
+}: {
+  name: string;
+  data: Uint8Array;
+  localHeaderOffset: number;
+  flags?: number;
+  centralCompressedSize?: number;
+  centralUncompressedSize?: number;
+}): Uint8Array {
+  const nameBytes = strToU8(name);
+  const bytes = new Uint8Array(46 + nameBytes.byteLength);
+  writeUint32(bytes, 0, 0x02014b50);
+  writeUint16(bytes, 4, 20);
+  writeUint16(bytes, 6, 20);
+  writeUint16(bytes, 8, flags);
+  writeUint16(bytes, 10, 0);
+  writeUint32(bytes, 16, crc32(data));
+  writeUint32(bytes, 20, centralCompressedSize);
+  writeUint32(bytes, 24, centralUncompressedSize);
+  writeUint16(bytes, 28, nameBytes.byteLength);
+  writeUint32(bytes, 42, localHeaderOffset);
+  bytes.set(nameBytes, 46);
+  return bytes;
+}
+
+function makeEndOfCentralDirectoryRecord({
+  centralDirectoryOffset,
+  centralDirectorySize,
+  entriesOnThisDisk,
+  totalEntries = entriesOnThisDisk,
+}: {
+  centralDirectoryOffset: number;
+  centralDirectorySize: number;
+  entriesOnThisDisk: number;
+  totalEntries?: number;
+}): Uint8Array {
+  const bytes = new Uint8Array(22);
+  writeUint32(bytes, 0, 0x06054b50);
+  writeUint16(bytes, 8, entriesOnThisDisk);
+  writeUint16(bytes, 10, totalEntries);
+  writeUint32(bytes, 12, centralDirectorySize);
+  writeUint32(bytes, 16, centralDirectoryOffset);
+  return bytes;
+}
+
+function makeDuplicateNameDataDescriptorLocalSentinelArchive(): Uint8Array {
+  const firstPayload = strToU8('rogue');
+  const secondPayload = strToU8('valid');
+  const firstRecord = makeStoredLocalFileRecord({
+    name: 'a.txt',
+    data: firstPayload,
+    flags: 0x0008,
+    localCompressedSize: 0xffffffff,
+    localUncompressedSize: 0xffffffff,
+    useDataDescriptor: true,
+  });
+  const secondRecordOffset = firstRecord.byteLength;
+  const secondRecord = makeStoredLocalFileRecord({ name: 'a.txt', data: secondPayload });
+  const centralDirectory = makeCentralDirectoryRecord({
+    name: 'a.txt',
+    data: secondPayload,
+    localHeaderOffset: secondRecordOffset,
+  });
+  const centralDirectoryOffset = firstRecord.byteLength + secondRecord.byteLength;
+  const eocd = makeEndOfCentralDirectoryRecord({
+    centralDirectoryOffset,
+    centralDirectorySize: centralDirectory.byteLength,
+    entriesOnThisDisk: 1,
+  });
+  return concatBytes([firstRecord, secondRecord, centralDirectory, eocd]);
+}
+
+function makeDataDescriptorLocalSentinelArchive(): Uint8Array {
+  const payload = strToU8('hello');
+  const record = makeStoredLocalFileRecord({
+    name: 'a.txt',
+    data: payload,
+    flags: 0x0008,
+    localCompressedSize: 0xffffffff,
+    localUncompressedSize: 0xffffffff,
+    useDataDescriptor: true,
+  });
+  const centralDirectory = makeCentralDirectoryRecord({
+    name: 'a.txt',
+    data: payload,
+    localHeaderOffset: 0,
+    flags: 0x0008,
+  });
+  const eocd = makeEndOfCentralDirectoryRecord({
+    centralDirectoryOffset: record.byteLength,
+    centralDirectorySize: centralDirectory.byteLength,
+    entriesOnThisDisk: 1,
+  });
+  return concatBytes([record, centralDirectory, eocd]);
+}
+
+function makeEocdDualCountSentinelArchive(): Uint8Array {
+  const archive = zipSync({ 'a.txt': strToU8('a') });
+  const eocd = findSignature(archive, 0x06054b50);
+  writeUint16(archive, eocd + 8, 0xffff);
+  return archive;
+}
+
 function fileFromBytes(bytes: Uint8Array, name: string): File {
   const buffer = new ArrayBuffer(bytes.byteLength);
   new Uint8Array(buffer).set(bytes);
@@ -553,6 +712,30 @@ describe('archive parse hardening', () => {
   it('rejects a Zip64 locator just before the loaded tail window on both paths', async () => {
     await expectFailClosedOnBothPaths(
       makeZip64LocatorBeforeTailArchive(),
+      ArchiveUnsupportedError,
+      /zip64|too large/iu,
+    );
+  });
+
+  it('rejects a duplicate-name data-descriptor local sentinel before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeDuplicateNameDataDescriptorLocalSentinelArchive(),
+      ArchiveSafetyError,
+      /missing from the central directory/u,
+    );
+  });
+
+  it('rejects a data-descriptor local Zip64 sentinel before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeDataDescriptorLocalSentinelArchive(),
+      ArchiveUnsupportedError,
+      /zip64|too large/iu,
+    );
+  });
+
+  it('rejects an EOCD dual-count Zip64 sentinel before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeEocdDualCountSentinelArchive(),
       ArchiveUnsupportedError,
       /zip64|too large/iu,
     );
