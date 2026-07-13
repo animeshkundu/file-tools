@@ -264,7 +264,7 @@ function validateLocalHeaderMatchesCentral(
   return { dataOffset: localNameEnd + localExtraLength };
 }
 
-function assertDataDescriptorMatches(
+function dataDescriptorMatches(
   descriptor: Uint8Array,
   centralEntry: CentralDirectoryEntry,
   hasSignature: boolean,
@@ -320,21 +320,13 @@ function assertLocalRecordsMatchCentralDirectory(
     const descriptorWithSignatureEnd = dataEnd + 16;
     if (
       descriptorWithoutSignatureEnd === nextBoundary &&
-      assertDataDescriptorMatches(
-        archive.subarray(dataEnd, descriptorWithoutSignatureEnd),
-        entry,
-        false,
-      )
+      dataDescriptorMatches(archive.subarray(dataEnd, descriptorWithoutSignatureEnd), entry, false)
     ) {
       continue;
     }
     if (
       descriptorWithSignatureEnd === nextBoundary &&
-      assertDataDescriptorMatches(
-        archive.subarray(dataEnd, descriptorWithSignatureEnd),
-        entry,
-        true,
-      )
+      dataDescriptorMatches(archive.subarray(dataEnd, descriptorWithSignatureEnd), entry, true)
     ) {
       continue;
     }
@@ -567,10 +559,11 @@ async function readCentralDirectoryEntriesFromFile(
   const relativeEocdOffset = findEndOfCentralDirectory(tail);
   const eocdOffset = tailOffset + relativeEocdOffset;
   if (eocdOffset >= ZIP64_EOCD_LOCATOR_SIZE) {
-    const locator =
-      relativeEocdOffset >= ZIP64_EOCD_LOCATOR_SIZE
-        ? tail.subarray(relativeEocdOffset - ZIP64_EOCD_LOCATOR_SIZE, relativeEocdOffset)
-        : await readFileRange(file, eocdOffset - ZIP64_EOCD_LOCATOR_SIZE, ZIP64_EOCD_LOCATOR_SIZE);
+    const locatorStart = eocdOffset - ZIP64_EOCD_LOCATOR_SIZE;
+    const locatorIsAlreadyInTail = relativeEocdOffset >= ZIP64_EOCD_LOCATOR_SIZE;
+    const locator = locatorIsAlreadyInTail
+      ? tail.subarray(relativeEocdOffset - ZIP64_EOCD_LOCATOR_SIZE, relativeEocdOffset)
+      : await readFileRange(file, locatorStart, ZIP64_EOCD_LOCATOR_SIZE);
     if (readUint32(locator, 0) === ZIP64_EOCD_LOCATOR_SIGNATURE) {
       throw new ArchiveUnsupportedError(
         'zip64',
@@ -739,12 +732,12 @@ async function assertLocalRecordsMatchCentralDirectoryFromFile(
 
     const matchesDescriptorWithoutSignature =
       dataEnd + 12 === nextBoundary &&
-      assertDataDescriptorMatches(await readFileRange(file, dataEnd, 12), entry, false);
+      dataDescriptorMatches(await readFileRange(file, dataEnd, 12), entry, false);
     if (matchesDescriptorWithoutSignature) continue;
 
     const matchesDescriptorWithSignature =
       dataEnd + 16 === nextBoundary &&
-      assertDataDescriptorMatches(await readFileRange(file, dataEnd, 16), entry, true);
+      dataDescriptorMatches(await readFileRange(file, dataEnd, 16), entry, true);
     if (matchesDescriptorWithSignature) continue;
 
     throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');

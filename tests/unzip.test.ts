@@ -146,6 +146,8 @@ function makeZip64SentinelArchive(): Uint8Array {
 }
 
 function makeGhostLocalHeaderArchive(): Uint8Array {
+  // Prepend a local header that is never referenced by the central directory. A parser that
+  // trusts linear local-header discovery instead of the central directory can emit this ghost.
   const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
   const central = findSignature(valid, 0x02014b50);
   const eocd = findSignature(valid, 0x06054b50);
@@ -179,6 +181,8 @@ function makeGhostLocalHeaderArchive(): Uint8Array {
 }
 
 function makeCentralDirectoryEocdGapArchive(): Uint8Array {
+  // Insert a byte between the central directory and EOCD so hidden content can sit outside the
+  // trusted central-directory span while still leaving a terminal EOCD for backward scanning.
   const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
   const eocd = findSignature(valid, 0x06054b50);
   const archive = new Uint8Array(valid.length + 1);
@@ -189,6 +193,8 @@ function makeCentralDirectoryEocdGapArchive(): Uint8Array {
 }
 
 function makeZip64LocatorBeforeTailArchive(): Uint8Array {
+  // Put the Zip64 locator immediately before an EOCD with a max-length comment so the streaming
+  // tail read starts at the EOCD and must explicitly read the 20 preceding bytes to see it.
   const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
   const eocd = findSignature(valid, 0x06054b50);
   const locator = new Uint8Array(20);
