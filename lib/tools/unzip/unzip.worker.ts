@@ -1,4 +1,5 @@
 import { extractZipFile } from './extract';
+import { formatWorkerError } from './formatWorkerError';
 import type { UnzipWorkerRequest, UnzipWorkerResponse } from './types';
 
 self.onmessage = async (event: MessageEvent<UnzipWorkerRequest>) => {
@@ -24,7 +25,7 @@ self.onmessage = async (event: MessageEvent<UnzipWorkerRequest>) => {
   } catch (error) {
     const response: UnzipWorkerResponse = {
       type: 'error',
-      message: error instanceof Error ? error.message : 'Could not extract this archive.',
+      message: formatWorkerError(error),
     };
     self.postMessage(response);
   }
