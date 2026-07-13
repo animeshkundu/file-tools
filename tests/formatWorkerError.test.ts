@@ -30,15 +30,19 @@ describe('formatWorkerError', () => {
     expect(formatWorkerError(err)).toBe("This archive can't be opened safely.");
   });
 
-  it('maps every ArchiveSafetyError variant to the same generic message', () => {
-    const variants = [
-      new ArchiveSafetyError('Archive structure is truncated.'),
-      new ArchiveSafetyError('Archive expanded beyond the extraction limit.'),
-      new ArchiveSafetyError('Archive contains too many entries.'),
-    ];
-    for (const err of variants) {
-      expect(formatWorkerError(err)).toBe("This archive can't be opened safely.");
-    }
+  it.each([
+    ['corrupt', 'This ZIP appears to be corrupted or incomplete.'],
+    ['unsafe-path', "This ZIP contains unsafe file paths, so it wasn't extracted."],
+    ['too-large', 'This ZIP is too large or has too many files to extract safely.'],
+    ['unsupported-method', "This ZIP uses a compression method that isn't supported yet."],
+  ] as const)('maps %s ArchiveSafetyError to category-specific copy', (category, copy) => {
+    expect(formatWorkerError(new ArchiveSafetyError('INTERNAL_PARSE_DETAIL', category))).toBe(copy);
+  });
+
+  it('keeps the generic safety message for an untagged ArchiveSafetyError', () => {
+    expect(formatWorkerError(new ArchiveSafetyError('INTERNAL_PARSE_DETAIL'))).toBe(
+      "This archive can't be opened safely.",
+    );
   });
 
   it('passes through plain Error messages unchanged', () => {
