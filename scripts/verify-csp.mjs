@@ -65,12 +65,6 @@ function parsePolicy(policy) {
       continue;
     }
 
-    const isAsciiControl = codePoint < 32 || codePoint === 127;
-
-    if (isAsciiControl && !ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
-      throw new Error('CSP contains a disallowed ASCII control character');
-    }
-
     if (!ALLOWED_CSP_GRAMMAR_CHARACTERS.has(codePoint)) {
       throw new Error('CSP contains a disallowed character outside the ASCII token allowlist');
     }
