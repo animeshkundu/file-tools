@@ -3,6 +3,8 @@
   "description": "Private offline ZIP extraction in your browser — nothing is uploaded.",
   "private": true,
   "version": "0.1.0",
+  "license": "MIT",
+  "author": "Animesh Kundu",
   "type": "module",
   "scripts": {
     "dev": "wxt",
