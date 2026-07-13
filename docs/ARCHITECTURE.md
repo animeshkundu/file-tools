@@ -3,7 +3,7 @@
 This is the deep architecture reference for the extension. [`../CLAUDE.md`](../CLAUDE.md) is the
 short, load-bearing contract (the rules an agent must not violate); this document explains *why*
 those rules exist, what is actually shipped versus planned, and how the pieces fit together. The
-product and market rationale live in [`../.docs/ext-1-file-tools.md`](../.docs/ext-1-file-tools.md)
+product and market rationale live in [`research/ext-1-file-tools.md`](research/ext-1-file-tools.md)
 (§7 in particular is the source for the cross-browser build strategy summarized below).
 
 Scope note: this doc describes the repo as it exists today (a single WXT application, version
@@ -236,7 +236,7 @@ protocol migration for new tools, not a claim that the current contract already 
 ## 5. Library / dependency table
 
 Shipped versions are pinned exactly as recorded in `package.json` / `package-lock.json` and
-mirrored in [`../THIRD-PARTY.md`](../THIRD-PARTY.md), which is the source of truth for the BOM.
+mirrored in [`THIRD-PARTY.md`](THIRD-PARTY.md), which is the source of truth for the BOM.
 Planned rows are what the research doc (§7.1 of `ext-1-file-tools.md`) recommends for future tools
 and are **not installed**.
 
@@ -328,7 +328,7 @@ surface between tools, so adding tool #2 can't silently couple to tool #1's inte
   small. The plan for RAR/7z (large WASM, §5) and even `@zip.js/zip.js` (larger than fflate) is to
   lazy-load them on first use rather than bundle them into the page's initial load; nothing in the
   seed does this yet because there is only one small engine to load.
-- **WASM32 ceiling.** No WASM binary ships today (`../THIRD-PARTY.md` states this explicitly). When
+- **WASM32 ceiling.** No WASM binary ships today (`THIRD-PARTY.md` states this explicitly). When
   a WASM codec (RAR/7z, hash-wasm's WASM path) is added, the practical linear-memory ceiling for a
   32-bit WASM module is roughly 2–4 GB; this is a hard upper bound on how large a single archive or
   file that codec can process without a 64-bit-memory strategy, independent of any safety-budget cap

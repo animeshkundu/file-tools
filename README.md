@@ -59,4 +59,4 @@ Production extension directories are emitted under `.output/`. The toolbar actio
 - `lib/tools/unzip/`: flagship extraction implementation and worker
 - `components/`: reusable Tailwind UI
 - `tests/`: safety and real ZIP round-trip tests
-- `.docs/`: research and incumbent teardown
+- `docs/`: product, engineering, research, teardown, and backlog documentation
