@@ -50,6 +50,16 @@ jobs:
           done
           echo "All required files present."
 
+      - name: Verify the canonical privacy promise is present
+        run: |
+          set -e
+          promise='Your files never leave your device; no uploads, no accounts, no telemetry; all processing local.'
+          if ! grep -qF "$promise" site/index.html; then
+            echo "ERROR: site/index.html is missing the canonical privacy promise." >&2
+            exit 1
+          fi
+          echo "Canonical privacy promise present."
+
       - name: Check internal URLs use /file-tools/ base path
         run: |
           set -e

@@ -50,7 +50,7 @@ exact-pinned, secret-free Pages workflow without crossing this unit's ownership 
 - The site should use semantic landmarks and headings, a skip link, visible emerald focus outlines,
   a 320px minimum viewport, no animation, and WCAG 2.1 AA-compatible documented color pairings
   (`docs/DESIGN.md:193-219`).
-- `mocks/home.html` is the closest static visual reference, but its future-tool cards cannot be
+- `docs/mocks/home.html` is the closest static visual reference, but its future-tool cards cannot be
   copied into this current-phase site because those tools are gated out.
 
 ### Base path and deployment
@@ -121,6 +121,6 @@ exact-pinned, secret-free Pages workflow without crossing this unit's ownership 
 - [`docs/PEER-REVIEW.md`](../PEER-REVIEW.md)
 - [`docs/PUBLISHING.md`](../PUBLISHING.md)
 - [`docs/ROADMAP.md`](../ROADMAP.md)
-- [`mocks/home.html`](../../mocks/home.html)
+- [`docs/mocks/home.html`](../mocks/home.html)
 - [`assets/tailwind.css`](../../assets/tailwind.css)
 

@@ -8,7 +8,7 @@ Read the relevant primary docs before changing behavior:
 
 - [`docs/VISION.md`](docs/VISION.md) - product purpose, audience, positioning, and non-goals.
 - [`docs/PRODUCT-SPEC.md`](docs/PRODUCT-SPEC.md) - tool tiers, requirements, acceptance criteria, and product constraints.
-- [`docs/DESIGN.md`](docs/DESIGN.md) - shipped light theme, interaction states, accessibility, and the design mocks under [`mocks/`](mocks/).
+- [`docs/DESIGN.md`](docs/DESIGN.md) - shipped light theme, interaction states, accessibility, and the design mocks under [`docs/mocks/`](docs/mocks/).
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - shipped system, target evolution, boundaries, dependencies, safety model, and testing strategy.
 - [`docs/PUBLISHING.md`](docs/PUBLISHING.md) - reproducible Firefox and Chrome packaging, review, and release process.
 - [`docs/PEER-REVIEW.md`](docs/PEER-REVIEW.md) - cross-lab critic findings and accepted dispositions. FIX-NOW and release-gate items are binding.
