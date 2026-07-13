@@ -15,9 +15,10 @@
  * console output) and fail-closed: any missing or malformed field is a failure,
  * never a pass.
  */
-import { readFileSync } from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import process from 'node:process';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const REPORT_PATH = path.join(REPO_ROOT, 'e2e-results.json');
@@ -26,7 +27,7 @@ const REPORT_PATH = path.join(REPO_ROOT, 'e2e-results.json');
 const EXPECTED_MIN = Number(process.env.E2E_EXPECTED_MIN ?? '5');
 
 function fail(message) {
-  console.error(`[assert-e2e-ran] FAIL: ${message}`);
+  process.stderr.write(`[assert-e2e-ran] FAIL: ${message}\n`);
   process.exit(1);
 }
 
@@ -73,6 +74,6 @@ if (expected < EXPECTED_MIN) {
   fail(`only ${expected} test(s) passed; expected at least ${EXPECTED_MIN} to actually run`);
 }
 
-console.log(
-  `[assert-e2e-ran] OK: ${expected} passed, ${skipped} skipped, ${unexpected} failed, ${flaky} flaky (min expected ${EXPECTED_MIN}).`,
+process.stdout.write(
+  `[assert-e2e-ran] OK: ${expected} passed, ${skipped} skipped, ${unexpected} failed, ${flaky} flaky (min expected ${EXPECTED_MIN}).\n`,
 );
