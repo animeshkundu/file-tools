@@ -16,6 +16,7 @@
     "compile": "tsc --noEmit",
     "test": "vitest run",
     "test:e2e": "playwright test --config tests/e2e/playwright.config.ts",
+    "capture": "node tests/e2e/capture.mjs",
     "test:watch": "vitest",
     "lint": "eslint .",
     "format": "prettier -w .",
