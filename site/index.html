@@ -63,6 +63,7 @@
           <p class="eyebrow">The privacy promise</p>
           <h2 id="privacy-title">Your files stay where they belong.</h2>
           <p class="privacy-promise">Your files never leave your device; no uploads, no accounts, no telemetry; all processing local.</p>
+          <p class="privacy-evidence">A strict no-egress content-security policy plus zero install-time permissions constrain network access; the empty permissions and no-egress content-security policy are checked in CI against the built manifest. See the <a href="https://github.com/animeshkundu/file-tools/blob/main/docs/PEER-REVIEW.md">peer review</a> and <a href="https://github.com/animeshkundu/file-tools/blob/main/docs/TEARDOWN.md">technical teardown</a>.</p>
         </div>
         <div class="privacy-facts" aria-label="Privacy facts">
           <span><strong>Local</strong> processing</span>
@@ -185,9 +186,10 @@
         <p>A real run of the extension, captured in Firefox.</p>
       </div>
       <div class="video-frame">
-        <video controls preload="metadata" poster="/file-tools/media/unzip-idle.png">
+        <video controls playsinline preload="metadata" poster="/file-tools/media/unzip-idle.png">
+          <source src="/file-tools/media/unzip-demo.mp4" type="video/mp4" />
           <source src="/file-tools/media/unzip-demo.webm" type="video/webm" />
-          Your browser does not support embedded WebM video. You can <a href="/file-tools/media/unzip-demo.webm">download the demo video</a> instead.
+          Your browser does not support embedded video. You can <a href="/file-tools/media/unzip-demo.mp4">download the MP4 demo</a> or <a href="/file-tools/media/unzip-demo.webm">download the WebM alternate</a> instead.
         </video>
       </div>
     </section>

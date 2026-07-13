@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   release:
@@ -33,6 +34,27 @@ jobs:
 
       - name: Package Firefox extension and sources
         run: npm run zip:firefox
+
+      - name: Generate checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd .output
+          shopt -s nullglob
+          zip_files=( *.zip )
+          (( ${#zip_files[@]} > 0 )) || { echo "No ZIP artifacts found" >&2; exit 1; }
+          sha256sum -- "${zip_files[@]}" > SHA256SUMS
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@v3
+
+      - name: Sign release assets with GitHub OIDC
+        shell: bash
+        run: |
+          set -euo pipefail
+          for file in .output/*.zip .output/SHA256SUMS; do
+            cosign sign-blob --yes --bundle "${file}.cosign.bundle" "${file}"
+          done
 
       # Optional. Set the repository variable PUBLISH_FIREFOX to true and add
       # FIREFOX_EXTENSION_ID, FIREFOX_JWT_ISSUER, and FIREFOX_JWT_SECRET as
@@ -64,7 +86,10 @@ jobs:
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          files: .output/*.zip
+          files: |
+            .output/*.zip
+            .output/SHA256SUMS
+            .output/*.cosign.bundle
           fail_on_unmatched_files: true
           body: |
             **Unzip** — private, safe ZIP extraction for Firefox and Chrome, entirely in your browser.
@@ -78,10 +103,39 @@ jobs:
             - Virtualized, sortable, filterable file tree; download one file or the whole tree with collision-safe names.
             - Cancellable, WCAG-AA accessible, real-Firefox end-to-end tested; one MV3 codebase for Chrome and Firefox; zero install-time permissions.
 
+            ### Known limitations
+            Extraction is intentionally limited to the standard-ZIP boundary. Encrypted (password-protected) archives, Zip64 and archives over 4 GB, and other non-standard formats are not extracted and are rejected with a clear message.
+
+            ### Compatibility
+            Runs on current stable Firefox and Chrome (MV3).
+
             ### Install
             - Firefox (AMO): coming soon
             - Chrome (Chrome Web Store): coming soon
 
+            ### Verify your download
+            Download `SHA256SUMS` alongside the ZIP files, then verify their checksums:
+
+            ```sh
+            sha256sum -c SHA256SUMS
+            ```
+
+            On macOS:
+
+            ```sh
+            shasum -a 256 -c SHA256SUMS
+            ```
+
+            Each asset also has a keyless GitHub OIDC signature bundle. Verify the checksum file before trusting it:
+
+            ```sh
+            cosign verify-blob --bundle SHA256SUMS.cosign.bundle --certificate-identity-regexp '^https://github\.com/animeshkundu/file-tools/\.github/workflows/release\.yml@refs/tags/v[^/]+$' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+            ```
+
+            For an independent build comparison, check out this tag, run `npm ci`, then `npm run zip` and `npm run zip:firefox`. Compare the generated ZIP SHA-256 values with `SHA256SUMS`, or compare the build inputs with the attached sources ZIP. Byte-for-byte equality can depend on the local toolchain and packaging metadata.
+
             Learn more: https://animesh.kundus.in/file-tools/
 
-            Attached: the built Chrome and Firefox extension packages and the Firefox sources archive.
+            [Changelog](https://github.com/animeshkundu/file-tools/blob/main/docs/CHANGELOG.md)
+
+            Attached: the built Chrome and Firefox extension packages, the Firefox sources archive, checksums, and keyless signature bundles.

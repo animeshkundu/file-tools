@@ -10,7 +10,7 @@ Private, safe ZIP extraction for Firefox and Chrome, entirely in your browser.
 
 > **Your files never leave your device; no uploads, no accounts, no telemetry; all processing local.**
 
-A strict no-egress content-security policy plus zero install-time permissions constrain network access; verified by CI and production-artifact tests.
+A strict no-egress content-security policy plus zero install-time permissions constrain network access; the empty permissions and no-egress content-security policy are checked in CI against the built manifest. See [docs/PEER-REVIEW.md](docs/PEER-REVIEW.md) and [docs/TEARDOWN.md](docs/TEARDOWN.md).
 
 ## Features
 
@@ -45,12 +45,34 @@ Unsafe, unsupported, or damaged archives fail closed with a clear message.
 
 ![Unzip friendly archive error state](docs/media/screenshots/unzip-error.png)
 
-[Watch the short real-Firefox demo](docs/media/unzip-demo.webm)
+[Watch the short real-Firefox demo (MP4)](docs/media/unzip-demo.mp4) · [WebM alternate](docs/media/unzip-demo.webm)
 
 ## Install
 
 - **Firefox:** coming soon (AMO)
 - **Chrome:** coming soon (Chrome Web Store)
+
+## Verify your download
+
+Download the ZIP files and `SHA256SUMS` from the [Releases page](https://github.com/animeshkundu/file-tools/releases), then verify their checksums:
+
+```sh
+sha256sum -c SHA256SUMS
+```
+
+On macOS:
+
+```sh
+shasum -a 256 -c SHA256SUMS
+```
+
+Each asset also has a keyless GitHub OIDC signature bundle. Verify the checksum file before trusting it:
+
+```sh
+cosign verify-blob --bundle SHA256SUMS.cosign.bundle --certificate-identity-regexp '^https://github\.com/animeshkundu/file-tools/\.github/workflows/release\.yml@refs/tags/v[^/]+$' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+```
+
+For an independent build comparison, check out the release tag, run `npm ci`, then `npm run zip` and `npm run zip:firefox`. Compare the generated ZIP SHA-256 values with `SHA256SUMS`, or compare the build inputs with the attached sources ZIP. Byte-for-byte equality can depend on the local toolchain and packaging metadata.
 
 ## How it works
 
