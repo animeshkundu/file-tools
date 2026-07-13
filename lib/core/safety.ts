@@ -36,8 +36,8 @@ const TEXT_ENCODER = new TextEncoder();
 
 export function foldArchivePathForComparison(path: string): string {
   // NTFS case folding can collide characters such as µ/μ after the filesystem uppercases and
-  // compares names; mirroring that uppercase-then-lowercase sequence closes that gap for archive
-  // collision checks.
+  // compares names. Running uppercase before lowercase ensures characters that only converge after
+  // uppercasing (µ→Μ and μ→Μ) fold to the same final key, matching the filesystem collision check.
   return path.normalize('NFC').toUpperCase().toLowerCase();
 }
 

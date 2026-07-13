@@ -223,21 +223,19 @@ describe('extractZip', () => {
       10,
     );
 
-    const originalPush = UnzipInflate.prototype.push;
     const createInflateMock = (
       afterFirstChunk: { value: boolean },
       afterSecondChunk: { value: boolean },
     ) =>
       vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
         this: UnzipInflate,
-        data,
+        _data,
         final,
       ) {
         this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5, 6), false);
         afterFirstChunk.value = true;
         this.ondata(null, Uint8Array.of(7, 8, 9, 10, 11, 12), final);
         afterSecondChunk.value = true;
-        return originalPush.call(this, data, final);
       });
 
     const extractZipAfterFirstChunk = { value: false };
