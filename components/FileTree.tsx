@@ -15,7 +15,11 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
         <span>Size</span>
         <span className="sr-only">Action</span>
       </div>
-      <ul className="max-h-96 divide-y divide-stone-100 overflow-auto">
+      <ul
+        className="max-h-96 divide-y divide-stone-100 overflow-auto"
+        tabIndex={0}
+        aria-label="Extracted files"
+      >
         {entries.map((entry) => (
           <li
             key={entry.path}
@@ -25,7 +29,7 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
               {entry.path}
             </span>
             <span className="text-xs tabular-nums text-stone-500">{formatBytes(entry.size)}</span>
-            <Button secondary onClick={() => onDownload(entry)}>
+            <Button secondary aria-label={`Download ${entry.path}`} onClick={() => onDownload(entry)}>
               Download
             </Button>
           </li>
