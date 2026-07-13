@@ -33,7 +33,16 @@ async function buildGeckoDriver(): Promise<FirefoxDriver> {
   const options = new FirefoxOptions()
     .addArguments('--headless')
     .addArguments('-remote-allow-system-access');
-  const service = new ServiceBuilder();
+  // SE_GECKODRIVER_BINARY is set by global-setup with the path resolved
+  // (and version-pinned) by Selenium Manager. Passing it here means this
+  // timed hook invokes zero Manager resolution.
+  const geckoPath = process.env.SE_GECKODRIVER_BINARY;
+  if (!geckoPath) {
+    throw new Error(
+      'SE_GECKODRIVER_BINARY is not set. Ensure global-setup successfully provisioned geckodriver via Selenium Manager.',
+    );
+  }
+  const service = new ServiceBuilder(geckoPath);
   // Builder.build() returns ThenableWebDriver; at runtime Firefox gives us the
   // Firefox-specific Driver subclass that has installAddon / setContext.
   return new Builder()
