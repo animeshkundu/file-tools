@@ -1,4 +1,3 @@
-// @ts-nocheck
 /**
  * End-to-end tests for the Unzip tool running inside a real Firefox WebExtension.
  *
@@ -16,7 +15,7 @@
 
 import { test, expect } from '@playwright/test';
 import { Builder, By, until } from 'selenium-webdriver';
-import { Options as FirefoxOptions, ServiceBuilder, Context } from 'selenium-webdriver/firefox.js';
+import { Options as FirefoxOptions, ServiceBuilder, Context, Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -30,21 +29,23 @@ const EXT_ID = 'file-tools@local';
 // Helpers
 // ---------------------------------------------------------------------------
 
-async function buildGeckoDriver() {
+async function buildGeckoDriver(): Promise<FirefoxDriver> {
   const options = new FirefoxOptions()
     .addArguments('--headless')
     .addArguments('-remote-allow-system-access');
   const service = new ServiceBuilder();
+  // Builder.build() returns ThenableWebDriver; at runtime Firefox gives us the
+  // Firefox-specific Driver subclass that has installAddon / setContext.
   return new Builder()
     .forBrowser('firefox')
     .setFirefoxOptions(options)
     .setFirefoxService(service)
-    .build();
+    .build() as unknown as FirefoxDriver;
 }
 
-async function getExtensionUUID(driver: ReturnType<typeof buildGeckoDriver>): Promise<string> {
+async function getExtensionUUID(driver: FirefoxDriver): Promise<string> {
   await driver.setContext(Context.CHROME);
-  const raw: string = await driver.executeScript(
+  const raw = await driver.executeScript<string>(
     `return Services.prefs.getCharPref('extensions.webextensions.uuids');`,
   );
   await driver.setContext(Context.CONTENT);
@@ -61,7 +62,7 @@ async function getExtensionUUID(driver: ReturnType<typeof buildGeckoDriver>): Pr
 // ---------------------------------------------------------------------------
 
 test.describe('Unzip — Firefox extension E2E', () => {
-  let driver: Awaited<ReturnType<typeof buildGeckoDriver>>;
+  let driver: FirefoxDriver;
   let extUUID: string;
 
   test.beforeAll(async () => {
@@ -109,7 +110,7 @@ test.describe('Unzip — Firefox extension E2E', () => {
 
     // No resource must have been loaded from outside the extension origin.
     const prefix = `moz-extension://${extUUID}/`;
-    const externalRequests: string[] = await driver.executeScript(
+    const externalRequests = await driver.executeScript<string[]>(
       `return performance.getEntriesByType('resource')
         .map(function(e) { return e.name; })
         .filter(function(url) {
