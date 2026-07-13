@@ -55,6 +55,7 @@ type CentralDirectoryMetadata = {
 
 type ValidatedLocalHeader = {
   dataOffset: number;
+  recordEnd: number;
 };
 
 type CentralDirectoryIndex = {
@@ -302,7 +303,40 @@ function validateLocalHeaderMatchesCentral(
     }
   }
 
-  return { dataOffset: localNameEnd + localExtraLength };
+  const dataOffset = localNameEnd + localExtraLength;
+  const compressedDataEnd = dataOffset + centralEntry.compressedSize;
+  if (compressedDataEnd > archive.length) {
+    throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
+  }
+  if (!centralEntry.hasDataDescriptor) {
+    return { dataOffset, recordEnd: compressedDataEnd };
+  }
+
+  const descriptorWithoutSignatureEnd = compressedDataEnd + 12;
+  if (
+    descriptorWithoutSignatureEnd <= archive.length &&
+    dataDescriptorMatches(
+      archive.subarray(compressedDataEnd, descriptorWithoutSignatureEnd),
+      centralEntry,
+      false,
+    )
+  ) {
+    return { dataOffset, recordEnd: descriptorWithoutSignatureEnd };
+  }
+
+  const descriptorWithSignatureEnd = compressedDataEnd + 16;
+  if (
+    descriptorWithSignatureEnd <= archive.length &&
+    dataDescriptorMatches(
+      archive.subarray(compressedDataEnd, descriptorWithSignatureEnd),
+      centralEntry,
+      true,
+    )
+  ) {
+    return { dataOffset, recordEnd: descriptorWithSignatureEnd };
+  }
+
+  throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
 }
 
 function dataDescriptorMatches(
@@ -347,34 +381,13 @@ function assertLocalRecordsMatchCentralDirectory(
       throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
     }
 
-    const { dataOffset } = validateLocalHeaderMatchesCentral(archive, entry);
-    const dataEnd = dataOffset + entry.compressedSize;
-    if (dataEnd > nextBoundary) {
+    const { recordEnd } = validateLocalHeaderMatchesCentral(archive, entry);
+    if (recordEnd > nextBoundary) {
       throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
     }
-    if (!entry.hasDataDescriptor) {
-      if (dataEnd !== nextBoundary) {
-        throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-      }
-      continue;
+    if (recordEnd !== nextBoundary) {
+      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
-
-    const descriptorWithoutSignatureEnd = dataEnd + 12;
-    const descriptorWithSignatureEnd = dataEnd + 16;
-    if (
-      descriptorWithoutSignatureEnd === nextBoundary &&
-      dataDescriptorMatches(archive.subarray(dataEnd, descriptorWithoutSignatureEnd), entry, false)
-    ) {
-      continue;
-    }
-    if (
-      descriptorWithSignatureEnd === nextBoundary &&
-      dataDescriptorMatches(archive.subarray(dataEnd, descriptorWithSignatureEnd), entry, true)
-    ) {
-      continue;
-    }
-
-    throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
   }
 }
 
@@ -735,7 +748,30 @@ async function validateLocalHeaderFromFile(
     }
   }
 
-  return { dataOffset: centralEntry.localHeaderOffset + 30 + nameLength + extraLength };
+  const dataOffset = centralEntry.localHeaderOffset + 30 + nameLength + extraLength;
+  const compressedDataEnd = dataOffset + centralEntry.compressedSize;
+  if (compressedDataEnd > file.size) {
+    throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
+  }
+  if (!hasDataDescriptor) {
+    return { dataOffset, recordEnd: compressedDataEnd };
+  }
+
+  if (
+    compressedDataEnd + 12 <= file.size &&
+    dataDescriptorMatches(await readFileRange(file, compressedDataEnd, 12), centralEntry, false)
+  ) {
+    return { dataOffset, recordEnd: compressedDataEnd + 12 };
+  }
+
+  if (
+    compressedDataEnd + 16 <= file.size &&
+    dataDescriptorMatches(await readFileRange(file, compressedDataEnd, 16), centralEntry, true)
+  ) {
+    return { dataOffset, recordEnd: compressedDataEnd + 16 };
+  }
+
+  throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
 }
 
 async function assertLocalRecordsMatchCentralDirectoryFromFile(
@@ -757,29 +793,13 @@ async function assertLocalRecordsMatchCentralDirectoryFromFile(
       throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
     }
 
-    const { dataOffset } = await validateLocalHeaderFromFile(file, entry);
-    const dataEnd = dataOffset + entry.compressedSize;
-    if (dataEnd > nextBoundary) {
+    const { recordEnd } = await validateLocalHeaderFromFile(file, entry);
+    if (recordEnd > nextBoundary) {
       throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
     }
-    if (!entry.hasDataDescriptor) {
-      if (dataEnd !== nextBoundary) {
-        throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-      }
-      continue;
+    if (recordEnd !== nextBoundary) {
+      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
-
-    const matchesDescriptorWithoutSignature =
-      dataEnd + 12 === nextBoundary &&
-      dataDescriptorMatches(await readFileRange(file, dataEnd, 12), entry, false);
-    if (matchesDescriptorWithoutSignature) continue;
-
-    const matchesDescriptorWithSignature =
-      dataEnd + 16 === nextBoundary &&
-      dataDescriptorMatches(await readFileRange(file, dataEnd, 16), entry, true);
-    if (matchesDescriptorWithSignature) continue;
-
-    throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
   }
 }
 

@@ -185,6 +185,33 @@ function makeGhostLocalHeaderArchive(): Uint8Array {
   return archive;
 }
 
+function makeTrailingGapGhostLocalHeaderArchive(): Uint8Array {
+  // Insert an orphan local header between the last real entry and the central directory. A parser
+  // that only checks central-referenced offsets in ascending order can still linear-scan this gap.
+  const valid = makeDeflatedArchive();
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  const name = strToU8('a.txt');
+  const payload = strToU8('ghost payload');
+  const rogue = new Uint8Array(30 + name.byteLength + payload.byteLength);
+  writeUint32(rogue, 0, 0x04034b50);
+  writeUint16(rogue, 4, 20);
+  writeUint16(rogue, 8, 0);
+  writeUint32(rogue, 14, crc32(payload));
+  writeUint32(rogue, 18, payload.byteLength);
+  writeUint32(rogue, 22, payload.byteLength);
+  writeUint16(rogue, 26, name.byteLength);
+  rogue.set(name, 30);
+  rogue.set(payload, 30 + name.byteLength);
+
+  const archive = new Uint8Array(valid.byteLength + rogue.byteLength);
+  archive.set(valid.subarray(0, central), 0);
+  archive.set(rogue, central);
+  archive.set(valid.subarray(central), central + rogue.byteLength);
+  writeUint32(archive, rogue.byteLength + eocd + 16, central + rogue.byteLength);
+  return archive;
+}
+
 function makeCentralDirectoryEocdGapArchive(): Uint8Array {
   // Insert a byte between the central directory and EOCD so hidden content can sit outside the
   // trusted central-directory span while still leaving a terminal EOCD for backward scanning.
@@ -701,9 +728,17 @@ describe('archive parse hardening', () => {
     expect(inflateSpy).not.toHaveBeenCalled();
   }
 
-  it('rejects a ghost local header before inflation or emit on both paths', async () => {
+  it('rejects a ghost local header at offset zero before inflation or emit on both paths', async () => {
     await expectFailClosedOnBothPaths(
       makeGhostLocalHeaderArchive(),
+      ArchiveSafetyError,
+      /missing from the central directory/u,
+    );
+  });
+
+  it('rejects a ghost local header in the trailing gap before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeTrailingGapGhostLocalHeaderArchive(),
       ArchiveSafetyError,
       /missing from the central directory/u,
     );
