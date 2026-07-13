@@ -238,15 +238,22 @@ function splitLimits(options: ExtractOptions): {
   return { limits, maxEntryBytes };
 }
 
-export function toBigIntSize(size: number | undefined): bigint {
+function toBigIntSize(size: number | undefined): bigint {
   if (typeof size !== 'number' || !Number.isSafeInteger(size) || size < 0) {
-    throw new ArchiveSafetyError('Archive entry declares an invalid size.');
+    throw new ArchiveSafetyError(
+      'Archive entry declares an invalid size (must be a non-negative safe integer).',
+    );
   }
   return BigInt(size);
 }
 
 function abortEntry(entry: TerminableEntry, error: unknown): never {
-  entry.terminate();
+  try {
+    entry.terminate();
+  } catch {
+    // Preserve the original archive safety failure; discard any termination error to avoid
+    // masking the root cause.
+  }
   throw error;
 }
 

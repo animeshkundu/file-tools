@@ -27,7 +27,10 @@ export class ArchiveSafetyError extends Error {
 
 const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
 const WINDOWS_UNSAFE_CHARACTERS = /[<>:"|?*]/u;
-const BIDI_OVERRIDE_CONTROL_CHARACTERS = /[\u202a-\u202e\u2066-\u2069]/u;
+// Reject bidi embedding/override/isolate controls that can spoof displayed filenames.
+// Exclude ALM (U+061C), LRM (U+200E), and RLM (U+200F) so ordinary directionality marks are not
+// blocked by this spoofing check.
+const BIDI_OVERRIDES = /[\u202a-\u202e\u2066-\u2069]/u;
 const MAX_PATH_SEGMENT_BYTES = 255;
 const TEXT_ENCODER = new TextEncoder();
 
@@ -35,7 +38,7 @@ export function safeArchivePath(name: string, root = '/extract'): string {
   if (
     !name ||
     name.includes('\\') ||
-    BIDI_OVERRIDE_CONTROL_CHARACTERS.test(name) ||
+    BIDI_OVERRIDES.test(name) ||
     [...name].some((character) => {
       const code = character.codePointAt(0);
       return code !== undefined && (code <= 31 || code === 127);

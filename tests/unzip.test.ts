@@ -2,7 +2,7 @@ import { UnzipInflate, strFromU8, strToU8, zipSync } from 'fflate';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArchiveSafetyError } from '../lib/core/safety';
 import { runUnzipWorker } from '../lib/core/worker';
-import { extractZip, extractZipFile, toBigIntSize } from '../lib/tools/unzip/extract';
+import { extractZip, extractZipFile } from '../lib/tools/unzip/extract';
 import {
   ARCHIVE_READ_CHUNK_BYTES,
   assertArchiveInputSize,
@@ -163,19 +163,19 @@ describe('extractZip', () => {
 
   it('terminates decompression when an emitted-byte guard trips mid-stream', () => {
     const archive = zipSync({ 'large.txt': strToU8('12345') });
-    let deliveredSecondChunk = false;
+    let returnedAfterFirstChunk = false;
     vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
       this: UnzipInflate,
-      _chunk,
+      _data,
       final,
     ) {
       this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5), false);
-      deliveredSecondChunk = true;
+      returnedAfterFirstChunk = true;
       this.ondata(null, Uint8Array.of(6), final);
     });
 
     expect(() => extractZip(archive, { maxEmittedBytes: 4n })).toThrow(/extraction limit/u);
-    expect(deliveredSecondChunk).toBe(false);
+    expect(returnedAfterFirstChunk).toBe(false);
   });
 
   it('enforces the per-entry cap before retaining an oversized entry', () => {
@@ -274,9 +274,29 @@ describe('extractZip', () => {
   });
 });
 
-describe('toBigIntSize', () => {
-  it.each([undefined, Number.NaN])('rejects invalid sizes before bigint conversion: %s', (size) => {
-    expect(() => toBigIntSize(size)).toThrow(/invalid size/u);
+describe('extractZip invalid-size guard', () => {
+  it('rejects invalid sizes before bigint conversion', () => {
+    const archive = zipSync({ 'a.txt': strToU8('a') });
+    const originalValues = Map.prototype.values;
+    vi.spyOn(Map.prototype, 'values').mockImplementation(function (this: Map<string, unknown>) {
+      if (this.size === 1 && this.has('a.txt')) {
+        return [
+          {
+            name: 'a.txt',
+            kind: 'file',
+            hasDataDescriptor: false,
+            compression: 0,
+            crc32: 3904355907,
+            compressedSize: 1,
+            uncompressedSize: Number.NaN,
+            localHeaderOffset: 0,
+          },
+        ][Symbol.iterator]();
+      }
+      return originalValues.call(this);
+    });
+
+    expect(() => extractZip(archive)).toThrow(/invalid size/u);
   });
 });
 
