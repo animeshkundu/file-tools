@@ -8,7 +8,7 @@ Private, safe ZIP extraction for Firefox and Chrome, entirely in your browser.
 
 ## The privacy promise
 
-> **Your files never leave your device. No uploads, no accounts, no telemetry. All processing runs locally in your browser.**
+> **Your files never leave your device; no uploads, no accounts, no telemetry; all processing local.**
 
 A strict no-egress content-security policy plus zero install-time permissions constrain network access; verified by CI and production-artifact tests.
 

@@ -128,7 +128,7 @@ load no webfont either, so they stay fully self-contained and render offline.
 
 ## 3. Key screens and user flows
 
-### 3.1 Home / tool picker - [`../mocks/home.html`](../mocks/home.html)
+### 3.1 Home / tool picker - [`mocks/home.html`](mocks/home.html)
 
 Entry point once the toolkit grows past a single tool. Same header treatment as the shipped app
 (eyebrow, H1, lede, offline pill), followed by a responsive grid of tool cards: Unzip (flagship,
@@ -143,7 +143,7 @@ Four states, driven by a single `status` value:
 1. **Idle** - the Dropzone, described above.
 2. **Extracting** - a card with "Opening `<name>`", the subtext "Validating and extracting
    safely…", a secondary Cancel button, and the Progress bar.
-3. **Ready** - [`../mocks/unzip.html`](../mocks/unzip.html). Archive name, a bold
+3. **Ready** - [`mocks/unzip.html`](mocks/unzip.html). Archive name, a bold
    "`{n}` files · `{size}`" heading, "Open another" (secondary) and "Download all" (primary)
    actions, the FileTree, and a centered helper caption underneath explaining that "Download all"
    preserves folder names on both Chrome and Firefox.
@@ -151,7 +151,7 @@ Four states, driven by a single `status` value:
    red-800 body text with the specific reason, and a primary "Try another file" button that
    resets to idle.
 
-### 3.3 Batch - [`../mocks/batch.html`](../mocks/batch.html)
+### 3.3 Batch - [`mocks/batch.html`](mocks/batch.html)
 
 A Pro-gated view for extracting several archives in one queue. An overall progress card shows
 how many of the queued archives are done, an indeterminate Progress bar for the batch as a whole,
@@ -162,7 +162,7 @@ A primary "Download all (.zip)" action bundles everything extracted so far into 
 batch header carries a small "Pro" badge to mark this as a paid capability layered on the same
 visual language as the free flow, not a different product.
 
-### 3.4 Settings and Pro - [`../mocks/settings-pro.html`](../mocks/settings-pro.html)
+### 3.4 Settings and Pro - [`mocks/settings-pro.html`](mocks/settings-pro.html)
 
 Two stacked cards. The Settings card holds two toggles ("Preserve folder paths on download,"
 "Confirm before extracting very large archives"), a size-limit select tied to the second toggle,
