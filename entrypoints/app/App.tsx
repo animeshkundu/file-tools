@@ -139,13 +139,11 @@ export default function App() {
 
   const totalBytes = entries.reduce((total, entry) => total + entry.size, 0);
   const liveMessage =
-    status === 'extracting'
-      ? `Extracting ${archiveName}`
-      : status === 'ready'
-        ? 'Extraction complete. Files are ready to download.'
-        : status === 'error'
-          ? `Extraction failed. ${error}`
-          : '';
+    status === 'ready'
+      ? `Extracted ${entries.length} ${entries.length === 1 ? 'file' : 'files'}.`
+      : status === 'error'
+        ? error
+        : '';
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#e5f5e7,transparent_35%),#f8faf6] px-5 py-10">
