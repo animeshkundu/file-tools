@@ -1,4 +1,4 @@
-import { Unzip, UnzipInflate, UnzipPassThrough } from 'fflate';
+import { Inflate } from 'fflate';
 import {
   ArchiveSafetyBudget,
   ArchiveSafetyError,
@@ -24,7 +24,6 @@ const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const EOCD_SIGNATURE = 0x06054b50;
 const DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
-const MAX_SIGNATURE_BOUNDARY_BYTES = 3;
 const UTF_8 = new TextDecoder();
 const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -59,10 +58,20 @@ type ValidatedLocalHeader = {
   recordEnd: number;
 };
 
-type CentralDirectoryIndex = {
-  entries: CentralDirectoryEntry[];
-  entriesByName: Map<string, CentralDirectoryEntry>;
-  entriesInLocalOrder: CentralDirectoryEntry[];
+type ValidatedEntryPlan = {
+  name: string;
+  path: string;
+  kind: ArchiveEntryKind;
+  method: 0 | 8;
+  dataOffset: number;
+  compressedSize: number;
+  uncompressedSize: number;
+  crc32: number;
+};
+
+type InflateConsumptionState = {
+  p?: Uint8Array;
+  s?: { p?: number };
 };
 
 type EndOfCentralDirectoryRecord = {
@@ -363,105 +372,66 @@ function dataDescriptorMatches(
   );
 }
 
-function containsLocalFileHeaderSignature(bytes: Uint8Array): boolean {
-  for (let offset = 0; offset <= bytes.length - 4; offset += 1) {
-    if (readUint32(bytes, offset) === LOCAL_FILE_HEADER_SIGNATURE) {
-      return true;
-    }
+function assertSupportedCompressionMethod(method: number): asserts method is 0 | 8 {
+  if (method !== 0 && method !== 8) {
+    throw new ArchiveSafetyError('Archive entry uses an unsupported compression method.');
   }
-  return false;
 }
 
-function assertGapContainsNoLocalFileHeaderSignature(
+function assertEntryDataRangesDoNotOverlap(plans: ValidatedEntryPlan[]): void {
+  const ranges = [...plans].sort((left, right) => left.dataOffset - right.dataOffset);
+  let previousEnd = 0;
+  for (const plan of ranges) {
+    if (plan.compressedSize > 0 && plan.dataOffset < previousEnd) {
+      throw new ArchiveSafetyError('Archive entry data ranges overlap.');
+    }
+    previousEnd = Math.max(previousEnd, plan.dataOffset + plan.compressedSize);
+  }
+}
+
+function buildValidatedEntryPlans(
   archive: Uint8Array,
-  start: number,
-  end: number,
-): void {
-  if (end <= start) return;
-  if (containsLocalFileHeaderSignature(archive.subarray(start, end))) {
-    throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-  }
-}
-
-function gapChunkContainsLocalFileHeaderSignature(
-  trailingBytes: Uint8Array,
-  chunk: Uint8Array,
-): boolean {
-  if (containsLocalFileHeaderSignature(chunk)) {
-    return true;
-  }
-  if (trailingBytes.byteLength === 0 || chunk.byteLength === 0) {
-    return false;
-  }
-
-  // Retain at most 3 bytes from the previous chunk because a 4-byte local-header signature can
-  // only straddle a chunk boundary with 1-3 bytes on the left side and the remainder on the right.
-  // The Math.max guard is defensive for any future caller that might pass fewer than
-  // MAX_SIGNATURE_BOUNDARY_BYTES bytes here.
-  const cappedTrailingBytes = trailingBytes.subarray(
-    Math.max(0, trailingBytes.byteLength - MAX_SIGNATURE_BOUNDARY_BYTES),
-  );
-  const chunkPrefixLength = Math.min(MAX_SIGNATURE_BOUNDARY_BYTES, chunk.byteLength);
-  const boundaryBytes = new Uint8Array(cappedTrailingBytes.byteLength + chunkPrefixLength);
-  boundaryBytes.set(cappedTrailingBytes);
-  boundaryBytes.set(chunk.subarray(0, chunkPrefixLength), cappedTrailingBytes.byteLength);
-  return containsLocalFileHeaderSignature(boundaryBytes);
-}
-
-function assertLocalRecordsMatchCentralDirectory(
-  archive: Uint8Array,
-  entriesInLocalOrder: CentralDirectoryEntry[],
-  centralDirectoryOffset: number,
-): void {
-  if (entriesInLocalOrder.length === 0) return;
-  let nextExpectedOffset = 0;
-  for (let index = 0; index < entriesInLocalOrder.length; index += 1) {
-    const entry = entriesInLocalOrder[index]!;
-    if (entry.localHeaderOffset < nextExpectedOffset) {
-      throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
-    }
-    assertGapContainsNoLocalFileHeaderSignature(
-      archive,
-      nextExpectedOffset,
-      entry.localHeaderOffset,
-    );
-    const nextBoundary = entriesInLocalOrder[index + 1]?.localHeaderOffset ?? centralDirectoryOffset;
-    if (entry.localHeaderOffset >= nextBoundary) {
-      throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
-    }
-
-    const { recordEnd } = validateLocalHeaderMatchesCentral(archive, entry);
-    if (recordEnd > nextBoundary) {
-      throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
-    }
-    nextExpectedOffset = recordEnd;
-  }
-  assertGapContainsNoLocalFileHeaderSignature(archive, nextExpectedOffset, centralDirectoryOffset);
-}
-
-function buildCentralDirectoryIndex(archive: Uint8Array): CentralDirectoryIndex {
-  const { entries, centralDirectoryOffset } = readCentralDirectoryEntries(archive);
-  for (const entry of entries) {
-    validateLocalHeaderMatchesCentral(archive, entry);
-  }
-  const entriesInLocalOrder = [...entries].sort((left, right) => left.localHeaderOffset - right.localHeaderOffset);
-  assertLocalRecordsMatchCentralDirectory(archive, entriesInLocalOrder, centralDirectoryOffset);
+  budget: ArchiveSafetyBudget,
+  maxEntryBytes: bigint,
+): ValidatedEntryPlan[] {
+  const { entries } = readCentralDirectoryEntries(archive);
   const comparableNames = new Set<string>();
-  const index = new Map<string, CentralDirectoryEntry>();
+  const names = new Set<string>();
+  const plans: ValidatedEntryPlan[] = [];
   for (const entry of entries) {
-    if (index.has(entry.name)) {
+    if (names.has(entry.name)) {
       throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
     }
     const comparableName = foldArchivePathForComparison(entry.name);
     if (comparableNames.has(comparableName)) {
-      throw new ArchiveSafetyError(
-        'Archive central directory contains case-colliding entry names.',
-      );
+      throw new ArchiveSafetyError('Archive central directory contains case-colliding entry names.');
     }
-    index.set(entry.name, entry);
+    names.add(entry.name);
     comparableNames.add(comparableName);
+    assertSupportedCompressionMethod(entry.compression);
+    const { dataOffset } = validateLocalHeaderMatchesCentral(archive, entry);
+    const dataEnd = dataOffset + entry.compressedSize;
+    if (!Number.isSafeInteger(dataEnd) || dataEnd > archive.length) {
+      throw new ArchiveSafetyError('Archive entry data range is out of bounds.');
+    }
+    const declaredSize = toBigIntSize(entry.uncompressedSize);
+    budget.checkDeclaredSize(declaredSize);
+    if (declaredSize > maxEntryBytes) {
+      throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
+    }
+    plans.push({
+      name: entry.name,
+      path: budget.addEntry(entry.name, entry.kind),
+      kind: entry.kind,
+      method: entry.compression,
+      dataOffset,
+      compressedSize: entry.compressedSize,
+      uncompressedSize: entry.uncompressedSize,
+      crc32: entry.crc32,
+    });
   }
-  return { entries, entriesByName: index, entriesInLocalOrder };
+  assertEntryDataRangesDoNotOverlap(plans);
+  return plans;
 }
 
 function updateCrc32(crc: number, chunk: Uint8Array): number {
@@ -478,10 +448,6 @@ type ExtractOptions = Partial<ArchiveLimits> & {
 type ExtractCallbacks = {
   onEntry: (entry: ExtractedEntry) => void;
   onProgress?: (loadedBytes: number, totalBytes: number) => void;
-};
-
-type TerminableEntry = {
-  terminate: () => void;
 };
 
 function splitLimits(options: ExtractOptions): {
@@ -502,16 +468,6 @@ function toBigIntSize(size: number | undefined): bigint {
     );
   }
   return BigInt(size);
-}
-
-function abortEntry(entry: TerminableEntry, error: unknown): never {
-  try {
-    entry.terminate();
-  } catch {
-    // Preserve the original archive safety failure; discard any termination error to avoid
-    // masking the root cause.
-  }
-  throw error;
 }
 
 function assertEntryChunkWithinLimit(
@@ -541,100 +497,108 @@ function joinEntryChunks(chunks: Uint8Array[], size: number): Uint8Array {
   return output;
 }
 
+type EntryDecoder = {
+  push: (chunk: Uint8Array, final: boolean) => void;
+  finish: () => void;
+};
+
+function createEntryDecoder(
+  plan: ValidatedEntryPlan,
+  budget: ArchiveSafetyBudget,
+  maxEntryBytes: bigint,
+  chunks: Uint8Array[],
+): EntryDecoder {
+  const entryByteLimit = computeEntryByteLimit(BigInt(plan.uncompressedSize), maxEntryBytes);
+  let crc = 0xffffffff;
+  let size = 0;
+  const acceptChunk = (chunk: Uint8Array): void => {
+    size = assertEntryChunkWithinLimit(size, chunk.byteLength, entryByteLimit);
+    budget.addEmittedBytes(chunk.byteLength);
+    if (chunk.byteLength > 0) {
+      chunks.push(chunk);
+      crc = updateCrc32(crc, chunk);
+    }
+  };
+
+  if (plan.method === 0) {
+    if (plan.compressedSize !== plan.uncompressedSize) {
+      throw new ArchiveSafetyError('Stored archive entry sizes do not match.');
+    }
+    return {
+      push: acceptChunk,
+      finish: () => validateDecodedEntry(plan, size, crc),
+    };
+  }
+
+  const inflater = new Inflate((chunk) => {
+    if (chunk?.byteLength) acceptChunk(chunk);
+  });
+  return {
+    push: (chunk, final) => {
+      try {
+        inflater.push(chunk, final);
+      } catch (error) {
+        if (error instanceof ArchiveSafetyError) throw error;
+        throw new ArchiveSafetyError(
+          `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
+        );
+      }
+    },
+    finish: () => {
+      const state = inflater as unknown as InflateConsumptionState;
+      const rbytes = state.p ? state.p.length : 0;
+      const rbits = state.s ? state.s.p || 0 : 0;
+      if (rbytes !== (rbits === 0 ? 0 : 1)) {
+        throw new ArchiveSafetyError(
+          'Archive entry deflate stream does not consume its declared compressed size.',
+        );
+      }
+      validateDecodedEntry(plan, size, crc);
+    },
+  };
+}
+
+function validateDecodedEntry(plan: ValidatedEntryPlan, size: number, crc: number): void {
+  if (plan.kind === 'directory' && size > 0) {
+    throw new ArchiveSafetyError('Archive directory entry contains data.');
+  }
+  if (size !== plan.uncompressedSize) {
+    throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${plan.path}`);
+  }
+  if (((crc ^ 0xffffffff) >>> 0) !== plan.crc32) {
+    throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${plan.path}`);
+  }
+}
+
+function decodeMemoryEntry(
+  archive: Uint8Array,
+  plan: ValidatedEntryPlan,
+  budget: ArchiveSafetyBudget,
+  maxEntryBytes: bigint,
+): ExtractedEntry | undefined {
+  const chunks: Uint8Array[] = [];
+  try {
+    const decoder = createEntryDecoder(plan, budget, maxEntryBytes, chunks);
+    const slice = archive.subarray(plan.dataOffset, plan.dataOffset + plan.compressedSize);
+    decoder.push(slice, true);
+    decoder.finish();
+    if (plan.kind === 'directory') return undefined;
+    const bytes = joinEntryChunks(chunks, plan.uncompressedSize);
+    return { path: plan.path, bytes, size: plan.uncompressedSize };
+  } catch (error) {
+    chunks.length = 0;
+    throw error;
+  }
+}
+
 export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): ExtractedEntry[] {
   const { limits, maxEntryBytes } = splitLimits(options);
   const budget = new ArchiveSafetyBudget({ ...DEFAULT_ARCHIVE_LIMITS, ...limits });
+  const plans = buildValidatedEntryPlans(archive, budget, maxEntryBytes);
   const entries: ExtractedEntry[] = [];
-  const { entriesByName: centralEntriesByName, entriesInLocalOrder } =
-    buildCentralDirectoryIndex(archive);
-  for (const entry of centralEntriesByName.values()) {
-    const declaredSize = toBigIntSize(entry.uncompressedSize);
-    budget.checkDeclaredSize(declaredSize);
-    if (declaredSize > maxEntryBytes) {
-      throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
-    }
-  }
-  let nextLocalEntryIndex = 0;
-  const unzipper = new Unzip((file) => {
-    const centralEntry = entriesInLocalOrder[nextLocalEntryIndex];
-    if (!centralEntry) {
-      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-    }
-    if (file.name !== centralEntry.name || file.compression !== centralEntry.compression) {
-      throw new ArchiveSafetyError('Archive local header does not match the central directory entry.');
-    }
-    nextLocalEntryIndex += 1;
-    centralEntriesByName.delete(centralEntry.name);
-
-    const path = budget.addEntry(file.name, centralEntry.kind);
-    const declaredSize = BigInt(centralEntry.uncompressedSize);
-    const entryByteLimit = computeEntryByteLimit(declaredSize, maxEntryBytes);
-    if (centralEntry.kind === 'directory') {
-      file.ondata = (error, chunk) => {
-        if (error) {
-          throw new ArchiveSafetyError(
-            `Archive directory failed to extract: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        if (chunk.byteLength > 0) {
-          throw new ArchiveSafetyError('Archive directory entry contains data.');
-        }
-      };
-      file.start();
-      return;
-    }
-
-    let crc = 0xffffffff;
-    let size = 0;
-    const chunks: Uint8Array[] = [];
-    file.ondata = (error, chunk, final) => {
-      try {
-        if (error) {
-          throw new ArchiveSafetyError(
-            `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, entryByteLimit);
-        budget.addEmittedBytes(chunk.byteLength);
-        if (chunk.byteLength > 0) {
-          chunks.push(chunk);
-          crc = updateCrc32(crc, chunk);
-        }
-        size = nextSize;
-        if (final) {
-          if (size !== centralEntry.uncompressedSize) {
-            throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
-          }
-          const actualCrc32 = (crc ^ 0xffffffff) >>> 0;
-          if (actualCrc32 !== centralEntry.crc32) {
-            throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${path}`);
-          }
-          const output = joinEntryChunks(chunks, size);
-          entries.push({ path, bytes: output, size });
-        }
-      } catch (caughtError) {
-        chunks.length = 0;
-        abortEntry(file, caughtError);
-      }
-    };
-
-    file.start();
-  });
-  unzipper.register(UnzipPassThrough);
-  unzipper.register(UnzipInflate);
-  try {
-    unzipper.push(archive, true);
-  } catch (error) {
-    if (error instanceof ArchiveSafetyError) throw error;
-    throw new ArchiveSafetyError(
-      `Archive parsing failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
-  }
-
-  if (centralEntriesByName.size > 0) {
-    throw new ArchiveSafetyError(
-      'Archive central directory has entries missing from local records.',
-    );
+  for (const plan of plans) {
+    const entry = decodeMemoryEntry(archive, plan, budget, maxEntryBytes);
+    if (entry) entries.push(entry);
   }
   budget.assertWithinTime();
   return entries;
@@ -822,56 +786,77 @@ async function validateLocalHeaderFromFile(
   throw new ArchiveSafetyError('Archive data descriptor does not match the central directory.');
 }
 
-async function assertLocalRecordsMatchCentralDirectoryFromFile(
+async function buildValidatedEntryPlansFromFile(
   file: File,
-  entriesInLocalOrder: CentralDirectoryEntry[],
-  centralDirectoryOffset: number,
-): Promise<void> {
-  if (entriesInLocalOrder.length === 0) return;
-  let nextExpectedOffset = 0;
-  const assertGapFromFileContainsNoLocalHeaderSignature = async (
-    start: number,
-    end: number,
-  ): Promise<void> => {
-    if (end <= start) return;
-
-    let trailingBytes: Uint8Array = new Uint8Array(0);
-    for (let offset = start; offset < end; offset += ARCHIVE_READ_CHUNK_BYTES) {
-      const length = Math.min(ARCHIVE_READ_CHUNK_BYTES, end - offset);
-      const chunk = await readFileRange(file, offset, length);
-      if (gapChunkContainsLocalFileHeaderSignature(trailingBytes, chunk)) {
-        throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-      }
-      // Keep only the final 3 bytes so the next iteration can detect a 4-byte signature split
-      // across the chunk boundary without re-reading or retaining the whole previous chunk. The
-      // Math.max guard is defensive for short chunks.
-      trailingBytes = chunk.subarray(
-        Math.max(0, chunk.byteLength - MAX_SIGNATURE_BOUNDARY_BYTES),
-      );
+  budget: ArchiveSafetyBudget,
+  maxEntryBytes: bigint,
+): Promise<ValidatedEntryPlan[]> {
+  const { entries } = await readCentralDirectoryEntriesFromFile(file, budget.limits.maxEntries);
+  const comparableNames = new Set<string>();
+  const names = new Set<string>();
+  const plans: ValidatedEntryPlan[] = [];
+  for (const entry of entries) {
+    if (names.has(entry.name)) {
+      throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
     }
-  };
-
-  for (let index = 0; index < entriesInLocalOrder.length; index += 1) {
-    const entry = entriesInLocalOrder[index]!;
-    if (entry.localHeaderOffset < nextExpectedOffset) {
-      throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
+    const comparableName = foldArchivePathForComparison(entry.name);
+    if (comparableNames.has(comparableName)) {
+      throw new ArchiveSafetyError('Archive central directory contains case-colliding entry names.');
     }
-    await assertGapFromFileContainsNoLocalHeaderSignature(
-      nextExpectedOffset,
-      entry.localHeaderOffset,
-    );
-    const nextBoundary = entriesInLocalOrder[index + 1]?.localHeaderOffset ?? centralDirectoryOffset;
-    if (entry.localHeaderOffset >= nextBoundary) {
-      throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
+    names.add(entry.name);
+    comparableNames.add(comparableName);
+    assertSupportedCompressionMethod(entry.compression);
+    const { dataOffset } = await validateLocalHeaderFromFile(file, entry);
+    const dataEnd = dataOffset + entry.compressedSize;
+    if (!Number.isSafeInteger(dataEnd) || dataEnd > file.size) {
+      throw new ArchiveSafetyError('Archive entry data range is out of bounds.');
     }
-
-    const { recordEnd } = await validateLocalHeaderFromFile(file, entry);
-    if (recordEnd > nextBoundary) {
-      throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
+    const declaredSize = toBigIntSize(entry.uncompressedSize);
+    budget.checkDeclaredSize(declaredSize);
+    if (declaredSize > maxEntryBytes) {
+      throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
     }
-    nextExpectedOffset = recordEnd;
+    plans.push({
+      name: entry.name,
+      path: budget.addEntry(entry.name, entry.kind),
+      kind: entry.kind,
+      method: entry.compression,
+      dataOffset,
+      compressedSize: entry.compressedSize,
+      uncompressedSize: entry.uncompressedSize,
+      crc32: entry.crc32,
+    });
   }
-  await assertGapFromFileContainsNoLocalHeaderSignature(nextExpectedOffset, centralDirectoryOffset);
+  assertEntryDataRangesDoNotOverlap(plans);
+  return plans;
+}
+
+async function decodeFileEntry(
+  file: File,
+  plan: ValidatedEntryPlan,
+  budget: ArchiveSafetyBudget,
+  maxEntryBytes: bigint,
+): Promise<ExtractedEntry | undefined> {
+  const chunks: Uint8Array[] = [];
+  try {
+    const decoder = createEntryDecoder(plan, budget, maxEntryBytes, chunks);
+    if (plan.compressedSize === 0) {
+      decoder.push(new Uint8Array(0), true);
+    } else {
+      const end = plan.dataOffset + plan.compressedSize;
+      for (let offset = plan.dataOffset; offset < end; offset += ARCHIVE_READ_CHUNK_BYTES) {
+        const length = Math.min(ARCHIVE_READ_CHUNK_BYTES, end - offset);
+        decoder.push(await readFileRange(file, offset, length), offset + length === end);
+      }
+    }
+    decoder.finish();
+    if (plan.kind === 'directory') return undefined;
+    const bytes = joinEntryChunks(chunks, plan.uncompressedSize);
+    return { path: plan.path, bytes, size: plan.uncompressedSize };
+  } catch (error) {
+    chunks.length = 0;
+    throw error;
+  }
 }
 
 export async function extractZipFile(
@@ -881,134 +866,17 @@ export async function extractZipFile(
 ): Promise<number> {
   const { limits, maxEntryBytes } = splitLimits(options);
   const budget = new ArchiveSafetyBudget({ ...DEFAULT_ARCHIVE_LIMITS, ...limits });
-  const { entries: centralEntries, centralDirectoryOffset } = await readCentralDirectoryEntriesFromFile(
-    file,
-    budget.limits.maxEntries,
-  );
-  const entriesInLocalOrder = [...centralEntries].sort(
-    (left, right) => left.localHeaderOffset - right.localHeaderOffset,
-  );
-  await assertLocalRecordsMatchCentralDirectoryFromFile(
-    file,
-    entriesInLocalOrder,
-    centralDirectoryOffset,
-  );
-  const comparableNames = new Set<string>();
-  const centralEntriesByName = new Map<string, CentralDirectoryEntry>();
-  for (const entry of centralEntries) {
-    await validateLocalHeaderFromFile(file, entry);
-    if (centralEntriesByName.has(entry.name)) {
-      throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
-    }
-    const comparableName = foldArchivePathForComparison(entry.name);
-    if (comparableNames.has(comparableName)) {
-      throw new ArchiveSafetyError(
-        'Archive central directory contains case-colliding entry names.',
-      );
-    }
-    centralEntriesByName.set(entry.name, entry);
-    comparableNames.add(comparableName);
-    const declaredSize = toBigIntSize(entry.uncompressedSize);
-    budget.checkDeclaredSize(declaredSize);
-    if (declaredSize > maxEntryBytes) {
-      throw new ArchiveSafetyError('Archive declares an entry larger than the per-entry limit.');
-    }
-  }
-
-  let activeEntry = false;
+  const plans = await buildValidatedEntryPlansFromFile(file, budget, maxEntryBytes);
   let totalBytes = 0;
-  let nextLocalEntryIndex = 0;
-  const unzipper = new Unzip((archiveEntry) => {
-    if (activeEntry) {
-      throw new ArchiveSafetyError('Archive entries overlap and cannot be processed sequentially.');
+  for (const plan of plans) {
+    const entry = await decodeFileEntry(file, plan, budget, maxEntryBytes);
+    if (entry) {
+      totalBytes += entry.size;
+      callbacks.onEntry(entry);
     }
-    const centralEntry = entriesInLocalOrder[nextLocalEntryIndex];
-    if (!centralEntry) {
-      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-    }
-    if (archiveEntry.name !== centralEntry.name || archiveEntry.compression !== centralEntry.compression) {
-      throw new ArchiveSafetyError('Archive local header does not match the central directory entry.');
-    }
-    nextLocalEntryIndex += 1;
-    centralEntriesByName.delete(centralEntry.name);
-    const path = budget.addEntry(archiveEntry.name, centralEntry.kind);
-    const declaredSize = BigInt(centralEntry.uncompressedSize);
-    const entryByteLimit = computeEntryByteLimit(declaredSize, maxEntryBytes);
-    if (centralEntry.kind === 'directory') {
-      activeEntry = true;
-      archiveEntry.ondata = (error, chunk, final) => {
-        if (error) {
-          throw new ArchiveSafetyError(
-            `Archive directory failed to extract: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        if (chunk.byteLength > 0) {
-          throw new ArchiveSafetyError('Archive directory entry contains data.');
-        }
-        if (final) activeEntry = false;
-      };
-      archiveEntry.start();
-      return;
-    }
-
-    activeEntry = true;
-    const chunks: Uint8Array[] = [];
-    let crc = 0xffffffff;
-    let size = 0;
-    archiveEntry.ondata = (error, chunk, final) => {
-      try {
-        if (error) {
-          throw new ArchiveSafetyError(
-            `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
-          );
-        }
-        const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, entryByteLimit);
-        budget.addEmittedBytes(chunk.byteLength);
-        if (chunk.byteLength > 0) {
-          chunks.push(chunk);
-          crc = updateCrc32(crc, chunk);
-        }
-        size = nextSize;
-        if (!final) return;
-        if (size !== centralEntry.uncompressedSize) {
-          throw new ArchiveSafetyError(`Archive entry size does not match its metadata: ${path}`);
-        }
-        if ((crc ^ 0xffffffff) >>> 0 !== centralEntry.crc32) {
-          throw new ArchiveSafetyError(`Archive entry failed CRC validation: ${path}`);
-        }
-        totalBytes += size;
-        activeEntry = false;
-        const output = joinEntryChunks(chunks, size);
-        callbacks.onEntry({ path, bytes: output, size });
-      } catch (caughtError) {
-        chunks.length = 0;
-        activeEntry = false;
-        abortEntry(archiveEntry, caughtError);
-      }
-    };
-    archiveEntry.start();
-  });
-  unzipper.register(UnzipPassThrough);
-  unzipper.register(UnzipInflate);
-
-  try {
-    for (let offset = 0; offset < file.size; offset += ARCHIVE_READ_CHUNK_BYTES) {
-      const length = Math.min(ARCHIVE_READ_CHUNK_BYTES, file.size - offset);
-      const chunk = await readFileRange(file, offset, length);
-      unzipper.push(chunk, offset + length === file.size);
-      callbacks.onProgress?.(offset + length, file.size);
-    }
-  } catch (error) {
-    if (error instanceof ArchiveSafetyError) throw error;
-    throw new ArchiveSafetyError(
-      `Archive parsing failed: ${error instanceof Error ? error.message : String(error)}`,
-    );
+    callbacks.onProgress?.(plan.dataOffset + plan.compressedSize, file.size);
   }
-  if (activeEntry || centralEntriesByName.size > 0) {
-    throw new ArchiveSafetyError(
-      'Archive central directory has entries missing from local records.',
-    );
-  }
+  callbacks.onProgress?.(file.size, file.size);
   budget.assertWithinTime();
   return totalBytes;
 }
