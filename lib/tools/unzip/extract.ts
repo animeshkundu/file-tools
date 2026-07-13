@@ -24,6 +24,7 @@ const LOCAL_FILE_HEADER_SIGNATURE = 0x04034b50;
 const CENTRAL_DIRECTORY_SIGNATURE = 0x02014b50;
 const EOCD_SIGNATURE = 0x06054b50;
 const DATA_DESCRIPTOR_SIGNATURE = 0x08074b50;
+const MAX_SIGNATURE_BOUNDARY_BYTES = 3;
 const UTF_8 = new TextDecoder();
 const CRC32_TABLE = (() => {
   const table = new Uint32Array(256);
@@ -362,20 +363,68 @@ function dataDescriptorMatches(
   );
 }
 
+function containsLocalFileHeaderSignature(bytes: Uint8Array): boolean {
+  for (let offset = 0; offset <= bytes.length - 4; offset += 1) {
+    if (readUint32(bytes, offset) === LOCAL_FILE_HEADER_SIGNATURE) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function assertGapContainsNoLocalFileHeaderSignature(
+  archive: Uint8Array,
+  start: number,
+  end: number,
+): void {
+  if (end <= start) return;
+  if (containsLocalFileHeaderSignature(archive.subarray(start, end))) {
+    throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+  }
+}
+
+function gapChunkContainsLocalFileHeaderSignature(
+  trailingBytes: Uint8Array,
+  chunk: Uint8Array,
+): boolean {
+  if (containsLocalFileHeaderSignature(chunk)) {
+    return true;
+  }
+  if (trailingBytes.byteLength === 0 || chunk.byteLength === 0) {
+    return false;
+  }
+
+  // Retain at most 3 bytes from the previous chunk because a 4-byte local-header signature can
+  // only straddle a chunk boundary with 1-3 bytes on the left side and the remainder on the right.
+  // The Math.max guard is defensive for any future caller that might pass fewer than
+  // MAX_SIGNATURE_BOUNDARY_BYTES bytes here.
+  const cappedTrailingBytes = trailingBytes.subarray(
+    Math.max(0, trailingBytes.byteLength - MAX_SIGNATURE_BOUNDARY_BYTES),
+  );
+  const chunkPrefixLength = Math.min(MAX_SIGNATURE_BOUNDARY_BYTES, chunk.byteLength);
+  const boundaryBytes = new Uint8Array(cappedTrailingBytes.byteLength + chunkPrefixLength);
+  boundaryBytes.set(cappedTrailingBytes);
+  boundaryBytes.set(chunk.subarray(0, chunkPrefixLength), cappedTrailingBytes.byteLength);
+  return containsLocalFileHeaderSignature(boundaryBytes);
+}
+
 function assertLocalRecordsMatchCentralDirectory(
   archive: Uint8Array,
   entriesInLocalOrder: CentralDirectoryEntry[],
   centralDirectoryOffset: number,
 ): void {
   if (entriesInLocalOrder.length === 0) return;
-  // Fail closed on leading bytes: the streaming parser walks local headers from the start of the
-  // archive, so any trusted first entry beyond offset 0 leaves room for an unindexed ghost header.
-  if (entriesInLocalOrder[0]!.localHeaderOffset !== 0) {
-    throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-  }
-
+  let nextExpectedOffset = 0;
   for (let index = 0; index < entriesInLocalOrder.length; index += 1) {
     const entry = entriesInLocalOrder[index]!;
+    if (entry.localHeaderOffset < nextExpectedOffset) {
+      throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
+    }
+    assertGapContainsNoLocalFileHeaderSignature(
+      archive,
+      nextExpectedOffset,
+      entry.localHeaderOffset,
+    );
     const nextBoundary = entriesInLocalOrder[index + 1]?.localHeaderOffset ?? centralDirectoryOffset;
     if (entry.localHeaderOffset >= nextBoundary) {
       throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
@@ -385,10 +434,9 @@ function assertLocalRecordsMatchCentralDirectory(
     if (recordEnd > nextBoundary) {
       throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
     }
-    if (recordEnd !== nextBoundary) {
-      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-    }
+    nextExpectedOffset = recordEnd;
   }
+  assertGapContainsNoLocalFileHeaderSignature(archive, nextExpectedOffset, centralDirectoryOffset);
 }
 
 function buildCentralDirectoryIndex(archive: Uint8Array): CentralDirectoryIndex {
@@ -780,14 +828,38 @@ async function assertLocalRecordsMatchCentralDirectoryFromFile(
   centralDirectoryOffset: number,
 ): Promise<void> {
   if (entriesInLocalOrder.length === 0) return;
-  // Fail closed on leading bytes: the streaming parser walks local headers from the start of the
-  // archive, so any trusted first entry beyond offset 0 leaves room for an unindexed ghost header.
-  if (entriesInLocalOrder[0]!.localHeaderOffset !== 0) {
-    throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-  }
+  let nextExpectedOffset = 0;
+  const assertGapFromFileContainsNoLocalHeaderSignature = async (
+    start: number,
+    end: number,
+  ): Promise<void> => {
+    if (end <= start) return;
+
+    let trailingBytes: Uint8Array = new Uint8Array(0);
+    for (let offset = start; offset < end; offset += ARCHIVE_READ_CHUNK_BYTES) {
+      const length = Math.min(ARCHIVE_READ_CHUNK_BYTES, end - offset);
+      const chunk = await readFileRange(file, offset, length);
+      if (gapChunkContainsLocalFileHeaderSignature(trailingBytes, chunk)) {
+        throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+      }
+      // Keep only the final 3 bytes so the next iteration can detect a 4-byte signature split
+      // across the chunk boundary without re-reading or retaining the whole previous chunk. The
+      // Math.max guard is defensive for short chunks.
+      trailingBytes = chunk.subarray(
+        Math.max(0, chunk.byteLength - MAX_SIGNATURE_BOUNDARY_BYTES),
+      );
+    }
+  };
 
   for (let index = 0; index < entriesInLocalOrder.length; index += 1) {
     const entry = entriesInLocalOrder[index]!;
+    if (entry.localHeaderOffset < nextExpectedOffset) {
+      throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
+    }
+    await assertGapFromFileContainsNoLocalHeaderSignature(
+      nextExpectedOffset,
+      entry.localHeaderOffset,
+    );
     const nextBoundary = entriesInLocalOrder[index + 1]?.localHeaderOffset ?? centralDirectoryOffset;
     if (entry.localHeaderOffset >= nextBoundary) {
       throw new ArchiveSafetyError('Archive local record order does not match the central directory.');
@@ -797,10 +869,9 @@ async function assertLocalRecordsMatchCentralDirectoryFromFile(
     if (recordEnd > nextBoundary) {
       throw new ArchiveSafetyError('Archive local record exceeds its central directory boundary.');
     }
-    if (recordEnd !== nextBoundary) {
-      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
-    }
+    nextExpectedOffset = recordEnd;
   }
+  await assertGapFromFileContainsNoLocalHeaderSignature(nextExpectedOffset, centralDirectoryOffset);
 }
 
 export async function extractZipFile(

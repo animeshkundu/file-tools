@@ -14,6 +14,8 @@ import {
 
 const ROGUE_DECLARED_SIZE = 0x20000000;
 const MAX_ZIP_COMMENT_LENGTH = 0xffff;
+const CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD = 42;
+const EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD = 16;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -88,13 +90,13 @@ function makeRogueLocalRecordArchive(): Uint8Array {
   archive.set(valid, rogue.byteLength);
   writeUint32(
     archive,
-    rogue.byteLength + central + 42,
-    rogue.byteLength + readUint32(valid, central + 42),
+    rogue.byteLength + central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD,
+    rogue.byteLength + readUint32(valid, central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD),
   );
   writeUint32(
     archive,
-    rogue.byteLength + eocd + 16,
-    rogue.byteLength + readUint32(valid, eocd + 16),
+    rogue.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    rogue.byteLength + readUint32(valid, eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD),
   );
   return archive;
 }
@@ -142,7 +144,7 @@ function makeZip64SentinelArchive(): Uint8Array {
   // Set EOCD entry count, CD size, and CD offset fields to the Zip64 sentinel values.
   writeUint16(archive, eocd + 10, 0xffff);
   writeUint32(archive, eocd + 12, 0xffffffff);
-  writeUint32(archive, eocd + 16, 0xffffffff);
+  writeUint32(archive, eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD, 0xffffffff);
   return archive;
 }
 
@@ -174,13 +176,13 @@ function makeGhostLocalHeaderArchive(): Uint8Array {
   archive.set(valid, rogue.byteLength);
   writeUint32(
     archive,
-    rogue.byteLength + central + 42,
-    rogue.byteLength + readUint32(valid, central + 42),
+    rogue.byteLength + central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD,
+    rogue.byteLength + readUint32(valid, central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD),
   );
   writeUint32(
     archive,
-    rogue.byteLength + eocd + 16,
-    rogue.byteLength + readUint32(valid, eocd + 16),
+    rogue.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    rogue.byteLength + readUint32(valid, eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD),
   );
   return archive;
 }
@@ -208,7 +210,11 @@ function makeTrailingGapGhostLocalHeaderArchive(): Uint8Array {
   archive.set(valid.subarray(0, central), 0);
   archive.set(rogue, central);
   archive.set(valid.subarray(central), central + rogue.byteLength);
-  writeUint32(archive, rogue.byteLength + eocd + 16, central + rogue.byteLength);
+  writeUint32(
+    archive,
+    rogue.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    central + rogue.byteLength,
+  );
   return archive;
 }
 
@@ -239,6 +245,52 @@ function makeZip64LocatorBeforeTailArchive(): Uint8Array {
   archive.set(locator, eocd);
   archive.set(valid.subarray(eocd), eocd + locator.length);
   archive.set(comment, eocd + locator.length + valid.subarray(eocd).length);
+  return archive;
+}
+
+function makeSfxPreambleArchive(): Uint8Array {
+  const valid = makeDeflatedArchive();
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  // Prefix an MZ-style DOS executable stub without any local-file-header signature bytes.
+  const stub = Uint8Array.of(0x4d, 0x5a, 0x90, 0x00, 0x41, 0x42, 0x43, 0x44);
+  const archive = new Uint8Array(stub.byteLength + valid.byteLength);
+  archive.set(stub);
+  archive.set(valid, stub.byteLength);
+  writeUint32(
+    archive,
+    stub.byteLength + central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD,
+    stub.byteLength + readUint32(valid, central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD),
+  );
+  // Shift the EOCD central-directory-start field forward to account for the SFX preamble bytes.
+  writeUint32(
+    archive,
+    stub.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    stub.byteLength + readUint32(valid, eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD),
+  );
+  return archive;
+}
+
+function makeArchiveExtraDataRecordArchive(): Uint8Array {
+  const valid = makeDeflatedArchive();
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  const payload = strToU8('meta');
+  const extraDataRecord = new Uint8Array(8 + payload.byteLength);
+  writeUint32(extraDataRecord, 0, 0x08064b50);
+  writeUint32(extraDataRecord, 4, payload.byteLength);
+  extraDataRecord.set(payload, 8);
+
+  const archive = new Uint8Array(valid.byteLength + extraDataRecord.byteLength);
+  archive.set(valid.subarray(0, central), 0);
+  archive.set(extraDataRecord, central);
+  archive.set(valid.subarray(central), central + extraDataRecord.byteLength);
+  // Shift the EOCD central-directory-start field forward to account for the inserted extra-data record.
+  writeUint32(
+    archive,
+    extraDataRecord.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    central + extraDataRecord.byteLength,
+  );
   return archive;
 }
 
@@ -728,6 +780,23 @@ describe('archive parse hardening', () => {
     expect(inflateSpy).not.toHaveBeenCalled();
   }
 
+  async function expectExtractsOnBothPaths(archive: Uint8Array, fileName: string) {
+    const inflateSpy = vi.spyOn(UnzipInflate.prototype, 'push');
+    const syncEntries = extractZip(archive);
+    expect(syncEntries).toHaveLength(1);
+    expect(syncEntries[0]?.path).toBe('a.txt');
+    expect(strFromU8(syncEntries[0]!.bytes)).toBe('hello'.repeat(256));
+    expect(inflateSpy).toHaveBeenCalled();
+
+    inflateSpy.mockClear();
+    const streamedEntries: string[] = [];
+    await extractZipFile(fileFromBytes(archive, fileName), {
+      onEntry: (entry) => streamedEntries.push(`${entry.path}:${strFromU8(entry.bytes)}`),
+    });
+    expect(streamedEntries).toEqual([`a.txt:${'hello'.repeat(256)}`]);
+    expect(inflateSpy).toHaveBeenCalled();
+  }
+
   it('rejects a ghost local header at offset zero before inflation or emit on both paths', async () => {
     await expectFailClosedOnBothPaths(
       makeGhostLocalHeaderArchive(),
@@ -789,6 +858,17 @@ describe('archive parse hardening', () => {
       makeMultiDiskArchive(),
       ArchiveSafetyError,
       /multiple disks/u,
+    );
+  });
+
+  it('accepts an SFX-style stub preamble when the leading gap has no local-header signature', async () => {
+    await expectExtractsOnBothPaths(makeSfxPreambleArchive(), 'sfx-preamble.zip');
+  });
+
+  it('accepts an archive extra data record before the central directory when the trailing gap has no local-header signature', async () => {
+    await expectExtractsOnBothPaths(
+      makeArchiveExtraDataRecordArchive(),
+      'archive-extra-data-record.zip',
     );
   });
 });
