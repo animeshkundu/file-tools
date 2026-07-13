@@ -2,7 +2,7 @@ import { UnzipInflate, strFromU8, strToU8, zipSync } from 'fflate';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArchiveSafetyError } from '../lib/core/safety';
 import { runUnzipWorker } from '../lib/core/worker';
-import { extractZip, extractZipFile } from '../lib/tools/unzip/extract';
+import { ArchiveUnsupportedError, extractZip, extractZipFile } from '../lib/tools/unzip/extract';
 import { formatWorkerError } from '../lib/tools/unzip/formatWorkerError';
 import {
   ARCHIVE_READ_CHUNK_BYTES,
@@ -122,6 +122,26 @@ function makeCrcCorruptArchive(): Uint8Array {
   const payloadOffset =
     local + 30 + readUint16(archive, local + 26) + readUint16(archive, local + 28);
   archive[payloadOffset] ^= 0xff;
+  return archive;
+}
+
+function makeEncryptedArchive(): Uint8Array {
+  const archive = zipSync({ 'secret.txt': strToU8('shh') });
+  const local = findSignature(archive, 0x04034b50);
+  const central = findSignature(archive, 0x02014b50);
+  // Set bit 0 (encryption flag) in local and central general-purpose bit flags.
+  writeUint16(archive, local + 6, readUint16(archive, local + 6) | 0x0001);
+  writeUint16(archive, central + 8, readUint16(archive, central + 8) | 0x0001);
+  return archive;
+}
+
+function makeZip64SentinelArchive(): Uint8Array {
+  const archive = zipSync({ 'big.txt': strToU8('data') });
+  const eocd = findSignature(archive, 0x06054b50);
+  // Set EOCD entry count, CD size, and CD offset fields to the Zip64 sentinel values.
+  writeUint16(archive, eocd + 10, 0xffff);
+  writeUint32(archive, eocd + 12, 0xffffffff);
+  writeUint32(archive, eocd + 16, 0xffffffff);
   return archive;
 }
 
@@ -342,6 +362,66 @@ describe('extractZip', () => {
   });
 });
 
+describe('encrypted archive detection', () => {
+  it('rejects a central-directory-encrypted archive before inflation', () => {
+    const archive = makeEncryptedArchive();
+    expect(() => extractZip(archive)).toThrow(ArchiveUnsupportedError);
+    expect(() => extractZip(archive)).toThrow(/encrypted/iu);
+  });
+
+  it('rejects an encrypted archive through file extraction', async () => {
+    const archive = makeEncryptedArchive();
+    const file = fileFromBytes(archive, 'encrypted.zip');
+    await expect(extractZipFile(file, { onEntry: vi.fn() })).rejects.toBeInstanceOf(
+      ArchiveUnsupportedError,
+    );
+    await expect(extractZipFile(file, { onEntry: vi.fn() })).rejects.toMatchObject({
+      reason: 'encrypted',
+    });
+  });
+
+  it('encrypted error maps to the friendly password-protected message', () => {
+    const archive = makeEncryptedArchive();
+    let caught: unknown;
+    try {
+      extractZip(archive);
+    } catch (error) {
+      caught = error;
+    }
+    expect(formatWorkerError(caught)).toBe("This ZIP is password-protected, which isn't supported yet.");
+  });
+});
+
+describe('Zip64 archive detection', () => {
+  it('rejects a Zip64-sentinel EOCD archive before inflation', () => {
+    const archive = makeZip64SentinelArchive();
+    expect(() => extractZip(archive)).toThrow(ArchiveUnsupportedError);
+    expect(() => extractZip(archive)).toThrow(/zip64|too large/iu);
+  });
+
+  it('rejects a Zip64-sentinel archive through file extraction', async () => {
+    const archive = makeZip64SentinelArchive();
+    const file = fileFromBytes(archive, 'big.zip');
+    await expect(extractZipFile(file, { onEntry: vi.fn() })).rejects.toBeInstanceOf(
+      ArchiveUnsupportedError,
+    );
+    await expect(extractZipFile(file, { onEntry: vi.fn() })).rejects.toMatchObject({
+      reason: 'zip64',
+    });
+  });
+
+  it('Zip64 error maps to the friendly too-large message', () => {
+    const archive = makeZip64SentinelArchive();
+    let caught: unknown;
+    try {
+      extractZip(archive);
+    } catch (error) {
+      caught = error;
+    }
+    expect(formatWorkerError(caught)).toBe('This ZIP is too large (over 4 GB) for the current extractor.');
+  });
+});
+
 describe('extractZip invalid-size guard', () => {
   it('rejects invalid sizes before bigint conversion', () => {
     const archive = zipSync({ 'a.txt': strToU8('a') });
@@ -496,6 +576,21 @@ describe('formatWorkerError', () => {
 
   it('passes through plain Error messages unchanged', () => {
     expect(formatWorkerError(new Error('Extraction timed out.'))).toBe('Extraction timed out.');
+  });
+
+  it('maps ArchiveUnsupportedError encrypted to password-protected message', () => {
+    const err = new ArchiveUnsupportedError('encrypted', 'internal detail');
+    expect(formatWorkerError(err)).toBe("This ZIP is password-protected, which isn't supported yet.");
+  });
+
+  it('maps ArchiveUnsupportedError zip64 to too-large message', () => {
+    const err = new ArchiveUnsupportedError('zip64', 'internal detail');
+    expect(formatWorkerError(err)).toBe('This ZIP is too large (over 4 GB) for the current extractor.');
+  });
+
+  it('does not expose internal ArchiveUnsupportedError messages', () => {
+    const err = new ArchiveUnsupportedError('encrypted', 'sensitive internal parse detail');
+    expect(formatWorkerError(err)).not.toContain('sensitive');
   });
 
   it('uses the fallback for non-Error values', () => {
