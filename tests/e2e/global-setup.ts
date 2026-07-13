@@ -40,14 +40,31 @@ export default async function globalSetup(): Promise<void> {
       ['--browser', 'firefox', '--driver-version', GECKODRIVER_VERSION, '--output', 'json'],
       { encoding: 'utf8' },
     );
-    let parsed: { result: { driver_path: string } };
+    let parsed: { result: { driver_path: string; browser_path?: string } };
     try {
-      parsed = JSON.parse(output) as { result: { driver_path: string } };
+      parsed = JSON.parse(output) as { result: { driver_path: string; browser_path?: string } };
     } catch (e) {
       throw new Error(
         `Selenium Manager returned unexpected output (expected JSON).\nRaw output: ${output}\nCause: ${e}`,
       );
     }
     process.env.SE_GECKODRIVER_BINARY = parsed.result.driver_path;
+    // browser_path is the Manager-resolved Firefox binary. Storing it lets the
+    // timed beforeAll use the same Firefox on environments without a system
+    // Firefox (e.g. CI runners that rely on Manager's downloaded Firefox).
+    // browser_path is typed optional: SM omits it when it cannot locate or
+    // download Firefox. In that case we leave SE_FIREFOX_BINARY unset and rely
+    // on whatever Firefox is in PATH (same as the previous behavior).
+    if (parsed.result.browser_path) {
+      process.env.SE_FIREFOX_BINARY = parsed.result.browser_path;
+    } else {
+      // If SM did not supply a browser_path the session will use system Firefox.
+      // This is expected on developer machines; on a CI runner without system
+      // Firefox this will cause a SessionNotCreatedError at test time.
+      console.warn(
+        '[global-setup] Selenium Manager did not return a browser_path; ' +
+          'the timed beforeAll will rely on a system Firefox being in PATH.',
+      );
+    }
   }
 }

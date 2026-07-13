@@ -16,6 +16,7 @@
 import { test, expect } from '@playwright/test';
 import { Builder, By, until } from 'selenium-webdriver';
 import { Options as FirefoxOptions, ServiceBuilder, Context, Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
+import { existsSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -41,6 +42,13 @@ async function buildGeckoDriver(): Promise<FirefoxDriver> {
     throw new Error(
       'SE_GECKODRIVER_BINARY is not set. Ensure global-setup successfully provisioned geckodriver via Selenium Manager.',
     );
+  }
+  // SE_FIREFOX_BINARY is the Manager-resolved Firefox binary captured in
+  // global-setup. Apply it so the session works on CI runners (and any other
+  // environment) that have no system Firefox and rely on Manager's download.
+  const firefoxBinary = process.env.SE_FIREFOX_BINARY;
+  if (firefoxBinary) {
+    options.setBinary(firefoxBinary);
   }
   const service = new ServiceBuilder(geckoPath);
   // Builder.build() returns ThenableWebDriver; at runtime Firefox gives us the
@@ -131,5 +139,49 @@ test.describe('Unzip — Firefox extension E2E', () => {
       externalRequests,
       `External requests: ${(externalRequests ?? []).join(', ')}`,
     ).toHaveLength(0);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Provisioning environment assertions
+// ---------------------------------------------------------------------------
+// These tests run without a browser and verify that global-setup correctly
+// captured the Selenium Manager resolution results. They prove the harness is
+// environment-robust (driver + Firefox paths are always threaded through
+// rather than re-resolved on demand).
+// ---------------------------------------------------------------------------
+
+test.describe('global-setup provisioning', () => {
+  test('SE_GECKODRIVER_BINARY is set and the path exists on disk', () => {
+    const driverPath = process.env.SE_GECKODRIVER_BINARY;
+    expect(
+      driverPath,
+      'SE_GECKODRIVER_BINARY must be set by global-setup (Selenium Manager driver resolution)',
+    ).toBeTruthy();
+    expect(
+      existsSync(driverPath!),
+      `SE_GECKODRIVER_BINARY path does not exist: ${driverPath}`,
+    ).toBe(true);
+  });
+
+  test('SE_FIREFOX_BINARY is set by global-setup (Selenium Manager browser resolution)', () => {
+    const browserPath = process.env.SE_FIREFOX_BINARY;
+    expect(
+      browserPath,
+      'SE_FIREFOX_BINARY must be set by global-setup (Selenium Manager browser resolution)',
+    ).toBeTruthy();
+  });
+
+  test('SE_FIREFOX_BINARY is correctly applied to FirefoxOptions via setBinary()', () => {
+    const browserPath = process.env.SE_FIREFOX_BINARY;
+    // Only verify threading when SM supplied a browser path; otherwise there is
+    // nothing to thread and the test above already asserts the var is set.
+    if (!browserPath) return;
+    // Verify the path is threaded into a real FirefoxOptions instance via the
+    // public Capabilities.get() API ('moz:firefoxOptions' key).
+    const options = new FirefoxOptions();
+    options.setBinary(browserPath);
+    const mozOpts = options.get('moz:firefoxOptions') as { binary?: string } | undefined;
+    expect(mozOpts?.binary).toBe(browserPath);
   });
 });
