@@ -20,5 +20,5 @@ export function entryDownloadName(entryPath: string): string {
     .replace(/^[/\\]+/, '')        // strip leading slashes (absolute paths)
     .replace(/^(\.\.?[/\\])+/, '') // strip leading ./ and ../
     .replace(/[/\\]/g, '_');       // replace remaining separators with _
-  return name.trim() || 'file';
+  return name.trim() ? name : 'file';
 }

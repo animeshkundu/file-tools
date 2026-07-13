@@ -43,5 +43,6 @@ describe('entryDownloadName', () => {
     expect(entryDownloadName('')).toBe('file');
     expect(entryDownloadName('/')).toBe('file');
     expect(entryDownloadName('./')).toBe('file');
+    expect(entryDownloadName('   ')).toBe('file');
   });
 });
