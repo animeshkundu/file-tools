@@ -13,6 +13,14 @@ Exact shipped runtime dependency BOM for version 0.1.0. Versions are pinned in `
 
 No runtime package in the current build ships a WASM binary.
 
+## E2E test tools (devDependencies — not bundled into the shipped extension)
+
+| Package                      | Version | SPDX license | Purpose                                               |
+| ---------------------------- | ------: | ------------ | ----------------------------------------------------- |
+| `@playwright/test`           |  1.61.1 | Apache-2.0   | E2E test runner and assertions                        |
+| `selenium-webdriver`         |  4.46.0 | Apache-2.0   | Firefox WebDriver client for moz-extension:// E2E     |
+| `@types/selenium-webdriver`  |  4.35.6 | MIT          | TypeScript type declarations for selenium-webdriver   |
+
 ## Formats deferred for licensing reasons
 
 RAR support via `node-unrar-js` bundles RarLab UnRAR and is non-free/restrictive. `7z-wasm` combines LGPL code with bundled UnRAR components. Neither is shipped; both remain later/Pro candidates pending a dedicated license review and complete redistribution documentation.
