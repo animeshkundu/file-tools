@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ExtractedEntry } from '../lib/tools/unzip/types';
 import {
   filterEntries,
+  getFilterSummary,
   getVisibleRange,
   ROW_HEIGHT,
   sortEntries,
@@ -186,5 +187,34 @@ describe('filterEntries + sortEntries composition', () => {
     const filtered = filterEntries(entries, 'src/');
     const sorted = sortEntries(filtered, 'name');
     expect(sorted.map((e) => e.path)).toEqual(['src/a.ts', 'src/z.ts']);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// getFilterSummary — N-of-M count indicator (#50)
+// ---------------------------------------------------------------------------
+describe('getFilterSummary', () => {
+  it('returns null when filter is not active', () => {
+    expect(getFilterSummary(100, 100, false)).toBeNull();
+  });
+
+  it('returns null for zero-length filter even when counts differ', () => {
+    expect(getFilterSummary(0, 50, false)).toBeNull();
+  });
+
+  it('returns "N of M files" string when filtering', () => {
+    expect(getFilterSummary(3, 10, true)).toBe('3 of 10 files');
+  });
+
+  it('returns "0 of M files" when nothing matches', () => {
+    expect(getFilterSummary(0, 20, true)).toBe('0 of 20 files');
+  });
+
+  it('returns "M of M files" when all entries match', () => {
+    expect(getFilterSummary(5, 5, true)).toBe('5 of 5 files');
+  });
+
+  it('handles a single match', () => {
+    expect(getFilterSummary(1, 1000, true)).toBe('1 of 1000 files');
   });
 });

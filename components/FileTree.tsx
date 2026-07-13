@@ -37,6 +37,19 @@ export function sortEntries(entries: ExtractedEntry[], key: SortKey): ExtractedE
   );
 }
 
+/**
+ * Returns a human-readable filter summary string when filtering is active,
+ * or null when no filter is applied.
+ */
+export function getFilterSummary(
+  filteredCount: number,
+  totalCount: number,
+  isFiltering: boolean,
+): string | null {
+  if (!isFiltering) return null;
+  return `${filteredCount} of ${totalCount} files`;
+}
+
 type FileTreeProps = {
   entries: ExtractedEntry[];
   onDownload: (entry: ExtractedEntry) => void;
@@ -47,6 +60,7 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [scrollTop, setScrollTop] = useState(0);
   const [containerHeight, setContainerHeight] = useState(CONTAINER_HEIGHT_DEFAULT);
+  const [revealedPath, setRevealedPath] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
@@ -68,6 +82,9 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
 
   const filtered = filterEntries(entries, filter);
   const sorted = sortEntries(filtered, sortKey);
+  const isFiltering = filter.trim().length > 0;
+  const filterSummary = getFilterSummary(filtered.length, entries.length, isFiltering);
+
   const { startIndex, endIndex } = getVisibleRange(
     sorted.length,
     ROW_HEIGHT,
@@ -89,9 +106,22 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
           type="search"
           placeholder="Filter files…"
           value={filter}
-          onChange={(e) => setFilter(e.target.value)}
+          onChange={(e) => {
+            setFilter(e.target.value);
+            setRevealedPath(null);
+          }}
           className="min-w-0 flex-1 rounded-md border border-stone-200 bg-white px-3 py-1.5 text-sm text-stone-800 placeholder:text-stone-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
         />
+        {filterSummary !== null && (
+          <span
+            role="status"
+            aria-live="polite"
+            aria-atomic="true"
+            className="shrink-0 text-xs text-stone-500"
+          >
+            {filterSummary}
+          </span>
+        )}
         <button
           type="button"
           onClick={() => setSortKey((k) => (k === 'name' ? 'size' : 'name'))}
@@ -100,6 +130,17 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
         >
           Sort: {sortKey === 'name' ? 'Name' : 'Size'}
         </button>
+      </div>
+      {/* Full-path reveal panel — always in DOM so aria-live announces changes */}
+      <div
+        id="file-path-reveal"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+        hidden={revealedPath === null}
+        className="border-b border-stone-200 bg-stone-50 px-4 py-2 text-xs text-stone-700 break-words"
+      >
+        {revealedPath ?? ''}
       </div>
       <div className="grid grid-cols-[1fr_auto_auto] gap-4 border-b border-stone-200 bg-stone-50 px-4 py-3 text-xs font-semibold uppercase tracking-wide text-stone-500">
         <span>File</span>
@@ -127,33 +168,52 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
             aria-label="Extracted files list"
             style={{ height: totalHeight, position: 'relative' }}
           >
-            {visibleEntries.map((entry, idx) => (
-              <li
-                key={entry.path}
-                style={{
-                  position: 'absolute',
-                  top: (startIndex + idx) * ROW_HEIGHT,
-                  left: 0,
-                  right: 0,
-                  height: ROW_HEIGHT,
-                }}
-                className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-stone-100 px-4 py-3"
-              >
-                <span className="truncate text-sm text-stone-800" title={entry.path}>
-                  {entry.path}
-                </span>
-                <span className="text-xs tabular-nums text-stone-500">
-                  {formatBytes(entry.size)}
-                </span>
-                <Button
-                  secondary
-                  aria-label={`Download ${entry.path}`}
-                  onClick={() => onDownload(entry)}
+            {visibleEntries.map((entry, idx) => {
+              const isRevealed = revealedPath === entry.path;
+              return (
+                <li
+                  key={entry.path}
+                  style={{
+                    position: 'absolute',
+                    top: (startIndex + idx) * ROW_HEIGHT,
+                    left: 0,
+                    right: 0,
+                    height: ROW_HEIGHT,
+                  }}
+                  className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-stone-100 px-4 py-3"
                 >
-                  Download
-                </Button>
-              </li>
-            ))}
+                  <span className="flex min-w-0 items-center gap-1">
+                    <span className="truncate text-sm text-stone-800" title={entry.path}>
+                      {entry.path}
+                    </span>
+                    <button
+                      type="button"
+                      aria-expanded={isRevealed}
+                      aria-controls="file-path-reveal"
+                      aria-label={
+                        isRevealed
+                          ? `Collapse full path for ${entry.path}`
+                          : `Reveal full path for ${entry.path}`
+                      }
+                      onClick={() => setRevealedPath(isRevealed ? null : entry.path)}
+                      className="shrink-0 rounded px-1 py-0.5 text-xs text-stone-400 hover:bg-stone-100 hover:text-stone-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                    >
+                      ⋯
+                    </button>
+                  </span>
+                  <span className="text-xs tabular-nums text-stone-500">
+                    {formatBytes(entry.size)}
+                  </span>
+                  <Button
+                    secondary
+                    aria-label={`Download ${entry.path}`}
+                    onClick={() => onDownload(entry)}
+                  >
+                    Download
+                  </Button>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
