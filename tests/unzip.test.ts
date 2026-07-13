@@ -1,7 +1,7 @@
 import { UnzipInflate, strFromU8, strToU8, zipSync } from 'fflate';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArchiveSafetyError } from '../lib/core/safety';
-import { runUnzipWorker } from '../lib/core/worker';
+import { CancelledError, runUnzipWorker } from '../lib/core/worker';
 import { extractZip, extractZipFile } from '../lib/tools/unzip/extract';
 import { formatWorkerError } from '../lib/tools/unzip/formatWorkerError';
 import {
@@ -446,6 +446,15 @@ describe('runUnzipWorker', () => {
     await expect(controller.promise).rejects.toThrow(/cancelled/u);
     expect(worker.terminated).toBe(1);
     expect(onEntry).not.toHaveBeenCalled();
+  });
+
+  it('rejects with a CancelledError instance so callers can distinguish cancel from error', async () => {
+    vi.stubGlobal('Worker', FakeWorker);
+    const controller = runUnzipWorker(new File([], 'a.zip'));
+
+    controller.cancel();
+
+    await expect(controller.promise).rejects.toBeInstanceOf(CancelledError);
   });
 
   it('cleans up after a worker-reported extraction error', async () => {
