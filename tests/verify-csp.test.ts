@@ -23,7 +23,7 @@ function validManifest(overrides: Manifest = {}): Manifest {
 
 async function runVerifier({
   chromeManifest = validManifest(),
-  firefoxManifest = chromeManifest,
+  firefoxManifest = validManifest(),
 }: {
   chromeManifest?: Manifest | null;
   firefoxManifest?: Manifest | null;
@@ -60,15 +60,31 @@ describe('verify-csp', () => {
   it.each([
     [
       'U+00A0 non-breaking space',
-      validPolicy.replace("connect-src 'none'", "connect-src\u00A0'none'"),
+      validPolicy.replace("connect-src 'none'", "connect-src 'none'"),
     ],
     [
       'U+FEFF BOM / zero-width no-break space',
-      validPolicy.replace("connect-src 'none'", "connect-src\uFEFF 'none'"),
+      validPolicy.replace("connect-src 'none'", "connect-src﻿ 'none'"),
     ],
     [
-      'full-width confusable directive token',
+      'U+FF53 full-width confusable directive token',
       validPolicy.replace("script-src 'self'", "ｓcript-src 'self'"),
+    ],
+    [
+      'U+200B zero-width space',
+      validPolicy.replace("connect-src 'none'", "connect-src​'none'"),
+    ],
+    [
+      'U+FF1B full-width semicolon smuggling a permissive directive',
+      validPolicy.replace("script-src 'self'", "script-src 'self'；connect-src *"),
+    ],
+    [
+      'U+FF07 full-width apostrophe in a directive name',
+      validPolicy.replace("connect-src 'none'", "connect-＇src 'none'"),
+    ],
+    [
+      'U+202E right-to-left override in a directive',
+      validPolicy.replace("connect-src 'none'", "connect-‮src *"),
     ],
   ])('rejects %s', async (_label, policy) => {
     const result = await runVerifier({
@@ -135,5 +151,16 @@ describe('verify-csp', () => {
     });
     expect(result.status, result.stderr).toBe(1);
     expect(result.stderr).toContain('.output/firefox-mv3/manifest.json');
+  });
+
+  it('rejects divergent targets when only Chrome is unsafe', async () => {
+    const chromePolicy = validPolicy.replace("connect-src 'none'", "connect-src *");
+    const result = await runVerifier({
+      chromeManifest: validManifest({
+        content_security_policy: { extension_pages: chromePolicy },
+      }),
+    });
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('.output/chrome-mv3/manifest.json');
   });
 });
