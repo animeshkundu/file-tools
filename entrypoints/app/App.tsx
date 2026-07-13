@@ -20,8 +20,9 @@ export default function App() {
   const controllerRef = useRef<WorkerController | null>(null);
   const operationRef = useRef(0);
   const objectUrlsRef = useRef(new Set<string>());
-  const readySectionRef = useRef<HTMLElement>(null);
-  const errorSectionRef = useRef<HTMLElement>(null);
+  const extractingHeadingRef = useRef<HTMLHeadingElement>(null);
+  const readyHeadingRef = useRef<HTMLHeadingElement>(null);
+  const errorHeadingRef = useRef<HTMLHeadingElement>(null);
 
   function revokeObjectUrls() {
     for (const url of objectUrlsRef.current) URL.revokeObjectURL(url);
@@ -39,16 +40,9 @@ export default function App() {
   );
 
   useEffect(() => {
-    if (status === 'ready') {
-      readySectionRef.current
-        ?.querySelector<HTMLButtonElement>('[data-focus-target="ready-action"]')
-        ?.focus();
-    }
-    if (status === 'error') {
-      errorSectionRef.current
-        ?.querySelector<HTMLButtonElement>('[data-focus-target="error-action"]')
-        ?.focus();
-    }
+    if (status === 'extracting') extractingHeadingRef.current?.focus();
+    if (status === 'ready') readyHeadingRef.current?.focus();
+    if (status === 'error') errorHeadingRef.current?.focus();
   }, [status]);
 
   async function openArchive(file: File) {
@@ -175,7 +169,13 @@ export default function App() {
           >
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
-                <p className="font-semibold text-stone-900">Opening {archiveName}</p>
+                <h2
+                  ref={extractingHeadingRef}
+                  tabIndex={-1}
+                  className="font-semibold text-stone-900"
+                >
+                  Opening {archiveName}
+                </h2>
                 <p className="mt-1 text-sm text-stone-500">Validating and extracting safely…</p>
               </div>
               <Button secondary onClick={() => controllerRef.current?.cancel()}>
@@ -188,29 +188,29 @@ export default function App() {
         )}
 
         {status === 'error' && (
-          <section ref={errorSectionRef} className="rounded-3xl border border-red-200 bg-red-50 p-8">
-            <h2 className="font-semibold text-red-950">
+          <section className="rounded-3xl border border-red-200 bg-red-50 p-8">
+            <h2 ref={errorHeadingRef} tabIndex={-1} className="font-semibold text-red-950">
               This archive could not be opened
             </h2>
             <p className="mt-2 text-sm text-red-800">{error}</p>
-            <Button className="mt-5" data-focus-target="error-action" onClick={reset}>
+            <Button className="mt-5" onClick={reset}>
               Try another file
             </Button>
           </section>
         )}
 
         {status === 'ready' && (
-          <section ref={readySectionRef}>
+          <section>
             <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
               <div>
                 <p className="text-sm text-stone-500">{archiveName}</p>
-                <h2 className="mt-1 text-2xl font-bold text-stone-950">
-                  {entries.length} {entries.length === 1 ? 'file' : 'files'} ·{' '}
+                <h2 ref={readyHeadingRef} tabIndex={-1} className="mt-1 text-2xl font-bold text-stone-950">
+                  {entries.length} {entries.length === 1 ? 'file' : 'files'} ready to download ·{' '}
                   {formatBytes(totalBytes)}
                 </h2>
               </div>
               <div className="flex gap-2">
-                <Button secondary data-focus-target="ready-action" onClick={reset}>
+                <Button secondary onClick={reset}>
                   Open another
                 </Button>
                 <Button onClick={() => void downloadAll()}>Download all</Button>

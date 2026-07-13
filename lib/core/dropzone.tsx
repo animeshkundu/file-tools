@@ -25,7 +25,6 @@ export function Dropzone({ disabled, onFile }: DropzoneProps) {
       className={`rounded-3xl border-2 border-dashed p-12 text-center transition ${
         dragging ? 'border-emerald-600 bg-emerald-50' : 'border-stone-300 bg-white'
       } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-emerald-500'}`}
-      aria-label="Select ZIP file"
       onClick={() => !disabled && inputRef.current?.click()}
       onDragEnter={(event) => {
         event.preventDefault();
@@ -48,7 +47,6 @@ export function Dropzone({ disabled, onFile }: DropzoneProps) {
         className="hidden"
         type="file"
         accept=".zip,application/zip"
-        aria-label="Select ZIP file"
         disabled={disabled}
         onChange={(event) => accept(event.target.files)}
       />
