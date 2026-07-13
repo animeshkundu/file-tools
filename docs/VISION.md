@@ -89,10 +89,10 @@ on Chrome.
 ## The wedge
 
 Offline. No upload. No ads. No account. Minimal permissions (the shipped build requests zero).
-Every one of those claims is mechanically verifiable: a user can open the manifest and see there
-are no host permissions and no network access requested, rather than trusting a privacy-policy
-page. That verifiability is the point, not a footnote, because the category's reputation was
-built by tools that said "your privacy matters" while uploading the file anyway.
+The manifest shows that there are no host or install-time permissions. The built CSP blocks
+fetch, XHR, WebSocket, beacon, form, and frame egress, while source review confirms no navigation
+or WebRTC egress. That verifiability is the point, not a footnote, because the category's
+reputation was built by tools that said "your privacy matters" while uploading the file anyway.
 
 ## Explicit non-goals
 

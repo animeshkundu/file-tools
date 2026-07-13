@@ -337,11 +337,11 @@ surface between tools, so adding tool #2 can't silently couple to tool #1's inte
 ## 9. Security model
 
 The manifest is the first line of the security story: `permissions: []` (zero), no
-`host_permissions`, no content scripts, and a CSP that forbids remote code
-(`extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'"`). Everything is
-bundled locally; `'wasm-unsafe-eval'` is there only to instantiate the WASM the extension itself
-ships, not to permit fetching or eval-ing remote code. There is no network call anywhere in the
-seed; that is a design invariant, not something enforced by tooling.
+`host_permissions`, no content scripts, and a strict extension-page CSP. The CSP blocks fetch,
+XHR, WebSocket, beacon, form, and frame egress; source review confirms that the extension
+implements no navigation or WebRTC egress. Everything is bundled locally. Although `hash-wasm`
+is installed for a planned tool, it is not imported and no WASM binary ships today, so
+`'wasm-unsafe-eval'` is intentionally absent until bundled WASM requires it.
 
 The second line is `lib/core/safety.ts`, which every archive-walking tool must route through:
 

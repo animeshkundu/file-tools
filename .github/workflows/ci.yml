@@ -40,6 +40,9 @@ jobs:
       - name: Build Firefox extension
         run: npm run build:firefox
 
+      - name: Verify built manifest CSP
+        run: node scripts/verify-csp.mjs
+
       - name: Upload build output
         uses: actions/upload-artifact@v4
         with:

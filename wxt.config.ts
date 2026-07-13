@@ -10,7 +10,8 @@ export default defineConfig({
     permissions: [],
     action: {},
     content_security_policy: {
-      extension_pages: "script-src 'self' 'wasm-unsafe-eval'; object-src 'self'",
+      extension_pages:
+        "default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'",
     },
     browser_specific_settings: {
       gecko: {
