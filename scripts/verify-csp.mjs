@@ -3,8 +3,12 @@ import process from 'node:process';
 
 const MANIFEST_PATHS = ['.output/chrome-mv3/manifest.json', '.output/firefox-mv3/manifest.json'];
 
-const ASCII_WHITESPACE = /[ \t\r\n\f]+/u;
 const ALLOWED_ASCII_WHITESPACE = new Set([9, 10, 12, 13, 32]);
+const ALLOWED_CSP_TOKEN_CHARACTERS = new Set(
+  [..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~:/?[]=@"].map(
+    (character) => character.charCodeAt(0),
+  ),
+);
 
 const REQUIRED_DIRECTIVES = new Map([
   ['default-src', ["'none'"]],
@@ -18,8 +22,50 @@ const REQUIRED_DIRECTIVES = new Map([
 ]);
 
 function parsePolicy(policy) {
+  const directives = new Map();
+  let tokens = [];
+  let currentToken = '';
+
+  const flushToken = () => {
+    if (currentToken.length === 0) {
+      return;
+    }
+
+    tokens.push(currentToken);
+    currentToken = '';
+  };
+
+  const flushDirective = () => {
+    flushToken();
+    if (tokens.length === 0) {
+      return;
+    }
+
+    const [name, ...sources] = tokens;
+    if (directives.has(name)) {
+      throw new Error(`CSP contains duplicate directive ${name}`);
+    }
+
+    directives.set(name, sources);
+    tokens = [];
+  };
+
   for (const character of policy) {
     const codePoint = character.codePointAt(0);
+    if (codePoint === undefined) {
+      throw new Error('CSP contains an unreadable character');
+    }
+
+    if (character === ';') {
+      flushDirective();
+      continue;
+    }
+
+    if (ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
+      flushToken();
+      continue;
+    }
+
     if (codePoint > 127) {
       throw new Error('CSP contains a non-ASCII character');
     }
@@ -29,20 +75,15 @@ function parsePolicy(policy) {
     if (isAsciiControl && !ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
       throw new Error('CSP contains a disallowed ASCII control character');
     }
-  }
 
-  const directives = new Map();
-  for (const segment of policy.split(';')) {
-    const tokens = segment.split(ASCII_WHITESPACE).filter(Boolean);
-    if (tokens.length === 0) continue;
-
-    const [name, ...sources] = tokens;
-    if (directives.has(name)) {
-      throw new Error(`CSP contains duplicate directive ${name}`);
+    if (!ALLOWED_CSP_TOKEN_CHARACTERS.has(codePoint)) {
+      throw new Error('CSP contains a disallowed character outside the ASCII token allowlist');
     }
-    directives.set(name, sources);
+
+    currentToken += character;
   }
 
+  flushDirective();
   return directives;
 }
 

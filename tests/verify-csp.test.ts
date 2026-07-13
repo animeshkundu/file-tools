@@ -58,13 +58,19 @@ describe('verify-csp', () => {
   });
 
   it.each([
-    ["connect-src\u00A0'none'", 'U+00A0'],
-    ["connect-src\uFEFF 'none'", 'U+FEFF'],
-    ["connect-src\u2000'none'", 'U+2000'],
-    ["connect-src\u3000'none'", 'U+3000'],
-    ["connect-src\u200B 'none'", 'U+200B'],
-  ])('rejects non-ASCII policy text %s (%s)', async (replacement) => {
-    const policy = validPolicy.replace("connect-src 'none'", replacement);
+    [
+      'U+00A0 non-breaking space',
+      validPolicy.replace("connect-src 'none'", "connect-src\u00A0'none'"),
+    ],
+    [
+      'U+FEFF BOM / zero-width no-break space',
+      validPolicy.replace("connect-src 'none'", "connect-src\uFEFF 'none'"),
+    ],
+    [
+      'full-width confusable directive token',
+      validPolicy.replace("script-src 'self'", "ｓcript-src 'self'"),
+    ],
+  ])('rejects %s', async (_label, policy) => {
     const result = await runVerifier({
       chromeManifest: validManifest({
         content_security_policy: { extension_pages: policy },
