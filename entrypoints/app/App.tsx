@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { downloadZip } from 'client-zip';
 import { Button } from '../../components/Button';
 import { FileTree } from '../../components/FileTree';
@@ -24,6 +24,7 @@ export default function App() {
   const controllerRef = useRef<WorkerController | null>(null);
   const operationRef = useRef(0);
   const isDownloadingRef = useRef(false);
+  const collectedEntriesRef = useRef<ExtractedEntry[]>([]);
   const objectUrlsRef = useRef(new Set<string>());
   const dropzoneRef = useRef<HTMLDivElement>(null);
   const previousStatusRef = useRef<Status | null>(null);
@@ -76,6 +77,7 @@ export default function App() {
     operationRef.current = operation;
     controllerRef.current?.cancel();
     revokeObjectUrls();
+    collectedEntriesRef.current = [];
     setArchiveName(file.name);
     setEntries([]);
     setProgress(0);
@@ -84,7 +86,7 @@ export default function App() {
     try {
       const controller = runUnzipWorker(file, {
         onEntry: (entry) => {
-          if (operationRef.current === operation) setEntries((current) => [...current, entry]);
+          if (operationRef.current === operation) collectedEntriesRef.current.push(entry);
         },
         onProgress: (loadedBytes, totalBytes) => {
           if (operationRef.current !== operation) return;
@@ -95,6 +97,7 @@ export default function App() {
       const result = await controller.promise;
       if (operationRef.current !== operation || result.type !== 'complete') return;
       setProgress(100);
+      setEntries(collectedEntriesRef.current);
       setStatus('ready');
     } catch (reason) {
       if (operationRef.current !== operation) return;
@@ -103,6 +106,7 @@ export default function App() {
         return;
       }
       setIsCancelling(false);
+      collectedEntriesRef.current = [];
       setEntries([]);
       setProgress(0);
       setError(reason instanceof Error ? reason.message : 'Could not extract this archive.');
@@ -149,6 +153,7 @@ export default function App() {
     controllerRef.current?.cancel();
     controllerRef.current = null;
     revokeObjectUrls();
+    collectedEntriesRef.current = [];
     setIsCancelling(false);
     setStatus('idle');
     setEntries([]);
@@ -158,7 +163,7 @@ export default function App() {
     setTypeHint('');
   }
 
-  const totalBytes = entries.reduce((total, entry) => total + entry.size, 0);
+  const totalBytes = useMemo(() => entries.reduce((total, entry) => total + entry.size, 0), [entries]);
   const liveMessage =
     isCancelling
       ? 'Cancelling…'
