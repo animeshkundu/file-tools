@@ -371,6 +371,14 @@ function makeEocdDualCountSentinelArchive(): Uint8Array {
   const archive = zipSync({ 'a.txt': strToU8('a') });
   const eocd = findSignature(archive, 0x06054b50);
   writeUint16(archive, eocd + 8, 0xffff);
+  writeUint16(archive, eocd + 10, 1);
+  return archive;
+}
+
+function makeMultiDiskArchive(): Uint8Array {
+  const archive = zipSync({ 'a.txt': strToU8('a') });
+  const eocd = findSignature(archive, 0x06054b50);
+  writeUint16(archive, eocd + 4, 1);
   return archive;
 }
 
@@ -738,6 +746,14 @@ describe('archive parse hardening', () => {
       makeEocdDualCountSentinelArchive(),
       ArchiveUnsupportedError,
       /zip64|too large/iu,
+    );
+  });
+
+  it('rejects a multi-disk EOCD before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeMultiDiskArchive(),
+      ArchiveSafetyError,
+      /multiple disks/u,
     );
   });
 });
