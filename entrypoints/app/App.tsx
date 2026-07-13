@@ -6,7 +6,7 @@ import { Progress } from '../../components/Progress';
 import { Dropzone } from '../../lib/core/dropzone';
 import { entryDownloadName } from '../../lib/core/download';
 import { formatBytes } from '../../lib/core/format';
-import { runUnzipWorker, type WorkerController } from '../../lib/core/worker';
+import { runUnzipWorker, CancelledError, type WorkerController } from '../../lib/core/worker';
 import { assertArchiveInputSize, type ExtractedEntry } from '../../lib/tools/unzip/types';
 
 type Status = 'idle' | 'extracting' | 'ready' | 'error';
@@ -20,6 +20,7 @@ export default function App() {
   const [error, setError] = useState('');
   const [typeHint, setTypeHint] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
+  const [isCancelling, setIsCancelling] = useState(false);
   const controllerRef = useRef<WorkerController | null>(null);
   const operationRef = useRef(0);
   const isDownloadingRef = useRef(false);
@@ -97,6 +98,11 @@ export default function App() {
       setStatus('ready');
     } catch (reason) {
       if (operationRef.current !== operation) return;
+      if (reason instanceof CancelledError) {
+        reset();
+        return;
+      }
+      setIsCancelling(false);
       setEntries([]);
       setProgress(0);
       setError(reason instanceof Error ? reason.message : 'Could not extract this archive.');
@@ -143,6 +149,7 @@ export default function App() {
     controllerRef.current?.cancel();
     controllerRef.current = null;
     revokeObjectUrls();
+    setIsCancelling(false);
     setStatus('idle');
     setEntries([]);
     setProgress(0);
@@ -153,13 +160,15 @@ export default function App() {
 
   const totalBytes = entries.reduce((total, entry) => total + entry.size, 0);
   const liveMessage =
-    status === 'ready'
-      ? entries.length === 0
-        ? 'Archive opened — no extractable files.'
-        : `Extracted ${entries.length} ${entries.length === 1 ? 'file' : 'files'}.`
-      : status === 'error'
-        ? error
-        : typeHint;
+    isCancelling
+      ? 'Cancelling…'
+      : status === 'ready'
+        ? entries.length === 0
+          ? 'Archive opened — no extractable files.'
+          : `Extracted ${entries.length} ${entries.length === 1 ? 'file' : 'files'}.`
+        : status === 'error'
+          ? error
+          : typeHint;
 
   return (
     <main className="min-h-screen bg-[radial-gradient(circle_at_top_left,#e5f5e7,transparent_35%),#f8faf6] px-5 py-10">
@@ -207,8 +216,15 @@ export default function App() {
                 </h2>
                 <p className="mt-1 text-sm text-stone-500">Validating and extracting safely…</p>
               </div>
-              <Button secondary onClick={() => controllerRef.current?.cancel()}>
-                Cancel
+              <Button
+                secondary
+                disabled={isCancelling}
+                onClick={() => {
+                  setIsCancelling(true);
+                  controllerRef.current?.cancel();
+                }}
+              >
+                {isCancelling ? 'Cancelling…' : 'Cancel'}
               </Button>
             </div>
             <Progress value={progress} />
@@ -260,6 +276,9 @@ export default function App() {
               Download all creates a safe, fresh ZIP that preserves folder names on Chrome and
               Firefox.
             </p>
+            <div className="mt-6">
+              <Dropzone onFile={openArchive} />
+            </div>
           </section>
         )}
 
