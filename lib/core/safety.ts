@@ -25,16 +25,29 @@ export class ArchiveSafetyError extends Error {
   }
 }
 
-const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/iu;
+const WINDOWS_RESERVED_NAMES = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])(?:[\s.]|$)/iu;
 const WINDOWS_UNSAFE_CHARACTERS = /[<>:"|?*]/u;
-const BIDI_CONTROL_CHARACTERS = /[\u061c\u200e\u200f\u202a-\u202e\u2066-\u2069]/u;
+// Reject bidi embedding/override/isolate controls that can spoof displayed filenames.
+// Exclude ALM (U+061C), LRM (U+200E), and RLM (U+200F) so ordinary directionality marks are not
+// blocked by this spoofing check.
+const BIDI_OVERRIDES = /[\u2028\u2029\u202a-\u202e\u2066-\u2069]/u;
+const MAX_PATH_SEGMENT_BYTES = 255;
 const TEXT_ENCODER = new TextEncoder();
+
+export function foldArchivePathForComparison(path: string): string {
+  // NFC first collapses canonically equivalent spellings onto one representation before case
+  // folding, so composed/decomposed variants cannot evade collision checks.
+  // NTFS case folding can collide characters such as µ/μ after the filesystem uppercases and
+  // compares names. Running uppercase before lowercase ensures characters that only converge after
+  // uppercasing (µ→Μ and μ→Μ) fold to the same final key, matching the filesystem collision check.
+  return path.normalize('NFC').toUpperCase().toLowerCase();
+}
 
 export function safeArchivePath(name: string, root = '/extract'): string {
   if (
     !name ||
     name.includes('\\') ||
-    BIDI_CONTROL_CHARACTERS.test(name) ||
+    BIDI_OVERRIDES.test(name) ||
     [...name].some((character) => {
       const code = character.codePointAt(0);
       return code !== undefined && (code <= 31 || code === 127);
@@ -60,6 +73,7 @@ export function safeArchivePath(name: string, root = '/extract'): string {
   if (
     parts.some(
       (part) =>
+        TEXT_ENCODER.encode(part).byteLength > MAX_PATH_SEGMENT_BYTES ||
         WINDOWS_UNSAFE_CHARACTERS.test(part) ||
         WINDOWS_RESERVED_NAMES.test(part) ||
         part.endsWith('.') ||
@@ -147,7 +161,7 @@ export class ArchiveSafetyBudget {
     if (this.paths.has(safePath)) {
       throw new ArchiveSafetyError('Archive contains duplicate entry paths.');
     }
-    const comparablePath = safePath.normalize('NFC').toLowerCase();
+    const comparablePath = foldArchivePathForComparison(safePath);
     if (this.comparablePaths.has(comparablePath)) {
       throw new ArchiveSafetyError('Archive contains case-colliding entry paths.');
     }

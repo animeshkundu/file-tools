@@ -1,4 +1,4 @@
-import { strFromU8, strToU8, zipSync } from 'fflate';
+import { UnzipInflate, strFromU8, strToU8, zipSync } from 'fflate';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArchiveSafetyError } from '../lib/core/safety';
 import { runUnzipWorker } from '../lib/core/worker';
@@ -16,6 +16,7 @@ const ROGUE_DECLARED_SIZE = 0x20000000;
 
 afterEach(() => {
   vi.useRealTimers();
+  vi.restoreAllMocks();
   vi.unstubAllGlobals();
   FakeWorker.instances = [];
 });
@@ -156,14 +157,98 @@ describe('extractZip', () => {
     expect(strFromU8(entries[0]!.bytes)).toBe('hello, private world');
   });
 
+  it('rejects case-insensitive central-directory path collisions but accepts distinct names', async () => {
+    const collidingArchive = zipSync({
+      'README.txt': strToU8('upper'),
+      'readme.txt': strToU8('lower'),
+    });
+
+    expect(() => extractZip(collidingArchive)).toThrow(/case-colliding entry names/u);
+    await expect(
+      extractZipFile(fileFromBytes(collidingArchive, 'collision.zip'), { onEntry: vi.fn() }),
+    ).rejects.toThrow(/case-colliding entry names/u);
+
+    const distinctArchive = zipSync({
+      'README.txt': strToU8('readme'),
+      'README.md': strToU8('markdown'),
+    });
+
+    expect(extractZip(distinctArchive).map((entry) => entry.path)).toEqual([
+      'README.txt',
+      'README.md',
+    ]);
+  });
+
+  it('rejects NTFS case-fold central-directory collisions', async () => {
+    const archive = zipSync({
+      'µ.txt': strToU8('micro sign'),
+      'μ.txt': strToU8('greek mu'),
+    });
+
+    expect(() => extractZip(archive)).toThrow(/case-colliding entry names/u);
+    await expect(
+      extractZipFile(fileFromBytes(archive, 'collision.zip'), { onEntry: vi.fn() }),
+    ).rejects.toThrow(/case-colliding entry names/u);
+  });
+
   it('enforces the emitted byte cap while extracting', () => {
     const archive = zipSync({ 'large.txt': strToU8('12345') });
     expect(() => extractZip(archive, { maxEmittedBytes: 4n })).toThrow(/extraction limit/u);
   });
 
+  it('terminates decompression when an emitted-byte guard trips mid-stream', () => {
+    const archive = zipSync({ 'large.txt': strToU8('12345') });
+    let returnedAfterFirstChunk = false;
+    vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
+      this: UnzipInflate,
+      _data,
+      final,
+    ) {
+      this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5), false);
+      returnedAfterFirstChunk = true;
+      this.ondata(null, Uint8Array.of(6), final);
+    });
+
+    expect(() => extractZip(archive, { maxEmittedBytes: 4n })).toThrow(/extraction limit/u);
+    expect(returnedAfterFirstChunk).toBe(false);
+  });
+
   it('enforces the per-entry cap before retaining an oversized entry', () => {
     const archive = zipSync({ 'large.txt': strToU8('12345') });
     expect(() => extractZip(archive, { maxEntryBytes: 4n })).toThrow(/per-entry/u);
+  });
+
+  it('caps per-entry emission at the declared size before full inflation', async () => {
+    const archive = patchDeclaredUncompressedSizes(
+      zipSync({ 'large.txt': strToU8('abcdefghijklmnop') }),
+      10,
+    );
+
+    const createInflateSpyWithChunkTracking = (chunksProcessed: number[]) =>
+      vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
+        this: UnzipInflate,
+        _data,
+        final,
+      ) {
+        this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5, 6), false);
+        chunksProcessed.push(1);
+        this.ondata(null, Uint8Array.of(7, 8, 9, 10, 11, 12), final);
+        chunksProcessed.push(2);
+      });
+
+    const extractZipChunksProcessed: number[] = [];
+    createInflateSpyWithChunkTracking(extractZipChunksProcessed);
+    expect(() => extractZip(archive)).toThrow(/per-entry/u);
+    expect(extractZipChunksProcessed).toEqual([1]);
+
+    vi.restoreAllMocks();
+
+    const extractZipFileChunksProcessed: number[] = [];
+    createInflateSpyWithChunkTracking(extractZipFileChunksProcessed);
+    await expect(
+      extractZipFile(fileFromBytes(archive, 'declared-size-cap.zip'), { onEntry: vi.fn() }),
+    ).rejects.toThrow(/per-entry/u);
+    expect(extractZipFileChunksProcessed).toEqual([1]);
   });
 
   it('streams directory records without accepting hidden payload data', () => {
@@ -254,6 +339,32 @@ describe('extractZip', () => {
       extractZipFile(fileFromBytes(archive, 'malicious.zip'), { onEntry }),
     ).rejects.toBeInstanceOf(ArchiveSafetyError);
     expect(onEntry).not.toHaveBeenCalled();
+  });
+});
+
+describe('extractZip invalid-size guard', () => {
+  it('rejects invalid sizes before bigint conversion', () => {
+    const archive = zipSync({ 'a.txt': strToU8('a') });
+    const originalValues = Map.prototype.values;
+    vi.spyOn(Map.prototype, 'values').mockImplementation(function (this: Map<string, unknown>) {
+      if (this.size === 1 && this.has('a.txt')) {
+        return [
+          {
+            name: 'a.txt',
+            kind: 'file',
+            hasDataDescriptor: false,
+            compression: 0,
+            crc32: 3904355907,
+            compressedSize: 1,
+            uncompressedSize: Number.NaN,
+            localHeaderOffset: 0,
+          },
+        ][Symbol.iterator]();
+      }
+      return originalValues.call(this);
+    });
+
+    expect(() => extractZip(archive)).toThrow(/invalid size/u);
   });
 });
 
