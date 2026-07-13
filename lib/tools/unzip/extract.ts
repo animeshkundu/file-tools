@@ -293,6 +293,8 @@ function assertLocalRecordsMatchCentralDirectory(
   centralDirectoryOffset: number,
 ): void {
   if (entriesInLocalOrder.length === 0) return;
+  // Fail closed on leading bytes: the streaming parser walks local headers from the start of the
+  // archive, so any trusted first entry beyond offset 0 leaves room for an unindexed ghost header.
   if (entriesInLocalOrder[0]!.localHeaderOffset !== 0) {
     throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
   }
@@ -457,7 +459,7 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
       throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
     if (file.name !== centralEntry.name || file.compression !== centralEntry.compression) {
-      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+      throw new ArchiveSafetyError('Archive local header does not match the central directory entry.');
     }
     nextLocalEntryIndex += 1;
     centralEntriesByName.delete(centralEntry.name);
@@ -707,6 +709,8 @@ async function assertLocalRecordsMatchCentralDirectoryFromFile(
   centralDirectoryOffset: number,
 ): Promise<void> {
   if (entriesInLocalOrder.length === 0) return;
+  // Fail closed on leading bytes: the streaming parser walks local headers from the start of the
+  // archive, so any trusted first entry beyond offset 0 leaves room for an unindexed ghost header.
   if (entriesInLocalOrder[0]!.localHeaderOffset !== 0) {
     throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
   }
@@ -797,7 +801,7 @@ export async function extractZipFile(
       throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
     if (archiveEntry.name !== centralEntry.name || archiveEntry.compression !== centralEntry.compression) {
-      throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
+      throw new ArchiveSafetyError('Archive local header does not match the central directory entry.');
     }
     nextLocalEntryIndex += 1;
     centralEntriesByName.delete(centralEntry.name);

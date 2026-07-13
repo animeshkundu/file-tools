@@ -13,6 +13,7 @@ import {
 } from '../lib/tools/unzip/types';
 
 const ROGUE_DECLARED_SIZE = 0x20000000;
+const MAX_ZIP_COMMENT_LENGTH = 0xffff;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -145,10 +146,14 @@ function makeZip64SentinelArchive(): Uint8Array {
   return archive;
 }
 
+function makeDeflatedArchive(): Uint8Array {
+  return zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
+}
+
 function makeGhostLocalHeaderArchive(): Uint8Array {
   // Prepend a local header that is never referenced by the central directory. A parser that
   // trusts linear local-header discovery instead of the central directory can emit this ghost.
-  const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
+  const valid = makeDeflatedArchive();
   const central = findSignature(valid, 0x02014b50);
   const eocd = findSignature(valid, 0x06054b50);
   const name = strToU8('a.txt');
@@ -183,7 +188,7 @@ function makeGhostLocalHeaderArchive(): Uint8Array {
 function makeCentralDirectoryEocdGapArchive(): Uint8Array {
   // Insert a byte between the central directory and EOCD so hidden content can sit outside the
   // trusted central-directory span while still leaving a terminal EOCD for backward scanning.
-  const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
+  const valid = makeDeflatedArchive();
   const eocd = findSignature(valid, 0x06054b50);
   const archive = new Uint8Array(valid.length + 1);
   archive.set(valid.subarray(0, eocd), 0);
@@ -195,13 +200,13 @@ function makeCentralDirectoryEocdGapArchive(): Uint8Array {
 function makeZip64LocatorBeforeTailArchive(): Uint8Array {
   // Put the Zip64 locator immediately before an EOCD with a max-length comment so the streaming
   // tail read starts at the EOCD and must explicitly read the 20 preceding bytes to see it.
-  const valid = zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
+  const valid = makeDeflatedArchive();
   const eocd = findSignature(valid, 0x06054b50);
   const locator = new Uint8Array(20);
   writeUint32(locator, 0, 0x07064b50);
-  writeUint16(valid, eocd + 20, 0xffff);
+  writeUint16(valid, eocd + 20, MAX_ZIP_COMMENT_LENGTH);
 
-  const comment = new Uint8Array(0xffff);
+  const comment = new Uint8Array(MAX_ZIP_COMMENT_LENGTH);
   const archive = new Uint8Array(valid.length + locator.length + comment.length);
   archive.set(valid.subarray(0, eocd), 0);
   archive.set(locator, eocd);
