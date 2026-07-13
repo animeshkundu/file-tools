@@ -4,6 +4,7 @@ import { Button } from '../../components/Button';
 import { FileTree } from '../../components/FileTree';
 import { Progress } from '../../components/Progress';
 import { Dropzone } from '../../lib/core/dropzone';
+import { entryDownloadName } from '../../lib/core/download';
 import { formatBytes } from '../../lib/core/format';
 import { runUnzipWorker, type WorkerController } from '../../lib/core/worker';
 import { assertArchiveInputSize, type ExtractedEntry } from '../../lib/tools/unzip/types';
@@ -17,8 +18,10 @@ export default function App() {
   const [entries, setEntries] = useState<ExtractedEntry[]>([]);
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState('');
+  const [isDownloading, setIsDownloading] = useState(false);
   const controllerRef = useRef<WorkerController | null>(null);
   const operationRef = useRef(0);
+  const isDownloadingRef = useRef(false);
   const objectUrlsRef = useRef(new Set<string>());
   const dropzoneRef = useRef<HTMLDivElement>(null);
   const previousStatusRef = useRef<Status | null>(null);
@@ -116,13 +119,22 @@ export default function App() {
   }
 
   function downloadEntry(entry: ExtractedEntry) {
-    download(new Blob([entry.bytes as BlobPart]), entry.path.split('/').pop() ?? 'file');
+    if (status !== 'ready' || isDownloadingRef.current) return;
+    download(new Blob([entry.bytes as BlobPart]), entryDownloadName(entry.path));
   }
 
   async function downloadAll() {
-    const files = entries.map((entry) => ({ name: entry.path, input: entry.bytes }));
-    const blob = await downloadZip(files).blob();
-    download(blob, `${archiveName.replace(/\.zip$/iu, '')}-extracted.zip`);
+    if (status !== 'ready' || isDownloadingRef.current) return;
+    isDownloadingRef.current = true;
+    setIsDownloading(true);
+    try {
+      const files = entries.map((entry) => ({ name: entry.path, input: entry.bytes }));
+      const blob = await downloadZip(files).blob();
+      download(blob, `${archiveName.replace(/\.zip$/iu, '')}-extracted.zip`);
+    } finally {
+      isDownloadingRef.current = false;
+      setIsDownloading(false);
+    }
   }
 
   function reset() {
@@ -221,10 +233,14 @@ export default function App() {
                 <Button secondary onClick={reset}>
                   Open another
                 </Button>
-                <Button onClick={() => void downloadAll()}>Download all</Button>
+                <Button disabled={isDownloading} onClick={() => void downloadAll()}>
+                  {isDownloading ? 'Downloading…' : 'Download all'}
+                </Button>
               </div>
             </div>
-            <FileTree entries={entries} onDownload={downloadEntry} />
+            <fieldset disabled={isDownloading} className="m-0 min-w-0 border-0 p-0">
+              <FileTree entries={entries} onDownload={downloadEntry} />
+            </fieldset>
             <p className="mt-4 text-center text-xs text-stone-500">
               Download all creates a safe, fresh ZIP that preserves folder names on Chrome and
               Firefox.
