@@ -5,6 +5,13 @@ import {
   type UnzipWorkerResponse,
 } from '../tools/unzip/types';
 
+export class CancelledError extends Error {
+  constructor() {
+    super('Extraction cancelled.');
+    this.name = 'CancelledError';
+  }
+}
+
 export type WorkerController = {
   cancel: () => void;
   promise: Promise<{ type: 'complete'; totalBytes: number }>;
@@ -82,7 +89,7 @@ export function runUnzipWorker(
       if (settled) return;
       settled = true;
       cleanup();
-      rejectPromise(new Error('Extraction cancelled.'));
+      rejectPromise(new CancelledError());
     },
   };
 }
