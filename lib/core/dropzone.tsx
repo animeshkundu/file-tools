@@ -1,11 +1,14 @@
-import { useRef, useState, type DragEvent } from 'react';
+import { forwardRef, useRef, useState, type DragEvent } from 'react';
 
 type DropzoneProps = {
   disabled?: boolean;
   onFile: (file: File) => void;
 };
 
-export function Dropzone({ disabled, onFile }: DropzoneProps) {
+export const Dropzone = forwardRef<HTMLDivElement, DropzoneProps>(function Dropzone(
+  { disabled, onFile },
+  ref,
+) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
 
@@ -22,6 +25,7 @@ export function Dropzone({ disabled, onFile }: DropzoneProps) {
 
   return (
     <div
+      ref={ref}
       className={`rounded-3xl border-2 border-dashed p-12 text-center transition ${
         dragging ? 'border-emerald-600 bg-emerald-50' : 'border-stone-300 bg-white'
       } ${disabled ? 'cursor-not-allowed opacity-60' : 'cursor-pointer hover:border-emerald-500'}`}
@@ -60,4 +64,4 @@ export function Dropzone({ disabled, onFile }: DropzoneProps) {
       <p className="mt-1 text-sm text-stone-500">or click to choose one from your device</p>
     </div>
   );
-}
+});

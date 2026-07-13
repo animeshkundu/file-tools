@@ -20,6 +20,8 @@ export default function App() {
   const controllerRef = useRef<WorkerController | null>(null);
   const operationRef = useRef(0);
   const objectUrlsRef = useRef(new Set<string>());
+  const dropzoneRef = useRef<HTMLDivElement>(null);
+  const previousStatusRef = useRef<Status | null>(null);
   const extractingHeadingRef = useRef<HTMLHeadingElement>(null);
   const readyHeadingRef = useRef<HTMLHeadingElement>(null);
   const errorHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -40,9 +42,16 @@ export default function App() {
   );
 
   useEffect(() => {
+    const previousStatus = previousStatusRef.current;
+
     if (status === 'extracting') extractingHeadingRef.current?.focus();
     if (status === 'ready') readyHeadingRef.current?.focus();
     if (status === 'error') errorHeadingRef.current?.focus();
+    if (status === 'idle' && previousStatus !== null && previousStatus !== 'idle') {
+      dropzoneRef.current?.focus();
+    }
+
+    previousStatusRef.current = status;
   }, [status]);
 
   async function openArchive(file: File) {
@@ -160,13 +169,10 @@ export default function App() {
           </div>
         </header>
 
-        {status === 'idle' && <Dropzone onFile={openArchive} />}
+        {status === 'idle' && <Dropzone ref={dropzoneRef} onFile={openArchive} />}
 
         {status === 'extracting' && (
-          <section
-            className="rounded-3xl border border-stone-200 bg-white p-8 shadow-sm"
-            aria-busy="true"
-          >
+          <section className="rounded-3xl border border-stone-200 bg-white p-8 shadow-sm">
             <div className="mb-5 flex items-center justify-between gap-4">
               <div>
                 <h2
@@ -183,7 +189,9 @@ export default function App() {
               </Button>
             </div>
             <Progress value={progress} />
-            <p className="mt-2 text-right text-xs tabular-nums text-stone-500">{progress}%</p>
+            <p className="mt-2 text-right text-xs tabular-nums text-stone-500" aria-hidden="true">
+              {progress}%
+            </p>
           </section>
         )}
 
