@@ -4,8 +4,11 @@ import process from 'node:process';
 const MANIFEST_PATHS = ['.output/chrome-mv3/manifest.json', '.output/firefox-mv3/manifest.json'];
 
 const ALLOWED_ASCII_WHITESPACE = new Set([9, 10, 12, 13, 32]);
-const ALLOWED_CSP_TOKEN_CHARACTERS = new Set(
-  [..."ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~:/?[]=@"].map(
+// Serialized CSP here is limited to ASCII whitespace separators plus directive/source
+// tokens built from RFC 7230 tchar-style bytes and URL punctuation used by CSP source
+// expressions, with `;` as the directive delimiter.
+const ALLOWED_CSP_GRAMMAR_CHARACTERS = new Set(
+  [...";ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789!#$%&'*+-.^_`|~:/?[]=@"].map(
     (character) => character.charCodeAt(0),
   ),
 );
@@ -68,7 +71,7 @@ function parsePolicy(policy) {
       throw new Error('CSP contains a disallowed ASCII control character');
     }
 
-    if (!ALLOWED_CSP_TOKEN_CHARACTERS.has(codePoint)) {
+    if (!ALLOWED_CSP_GRAMMAR_CHARACTERS.has(codePoint)) {
       throw new Error('CSP contains a disallowed character outside the ASCII token allowlist');
     }
 
