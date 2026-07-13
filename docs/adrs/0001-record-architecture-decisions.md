@@ -10,7 +10,7 @@ animeshkundu/file-tools needs durable decision records so future contributors ca
 
 ## Decision
 
-Record significant architecture and long-lived process decisions as ADRs under `docs/adr/` or the repository's established ADR directory. Use the Nygard-style template at `docs/adrs/0000-template.md` when creating new records.
+Record significant architecture and long-lived process decisions as ADRs under `docs/adrs/`. Use the Nygard-style template at `docs/adrs/0000-template.md` when creating new records.
 
 ## Consequences
 

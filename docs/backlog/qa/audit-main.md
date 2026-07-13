@@ -468,20 +468,20 @@ Every dependency uses `^` (caret) ranges.  A `npm ci` can install a different mi
 version of `fflate`, `client-zip`, or `wxt` on each CI run, making the build non-reproducible.
 
 **Required fix:** pin all dependencies to exact versions; keep `package-lock.json` committed and
-synchronise `THIRD-PARTY.md` with the pinned installed versions.
+synchronise `docs/THIRD-PARTY.md` with the pinned installed versions.
 
-### 5.2 THIRD-PARTY.md may be out of date with actual installed versions
+### 5.2 docs/THIRD-PARTY.md may be out of date with actual installed versions
 
-**File:** `THIRD-PARTY.md`  
+**File:** `docs/THIRD-PARTY.md`
 **Severity:** MEDIUM  
 
-`CLAUDE.md` requires `THIRD-PARTY.md` to list "package, exact installed version, provenance where
+`CLAUDE.md` requires `docs/THIRD-PARTY.md` to list "package, exact installed version, provenance where
 relevant, and SPDX license" for every shipped dependency and WASM artifact. The current
-`THIRD-PARTY.md` has not been verified against `package-lock.json` in this audit. Until
-dependencies are pinned and `THIRD-PARTY.md` is regenerated from locked versions, the notice is
+`docs/THIRD-PARTY.md` has not been verified against `package-lock.json` in this audit. Until
+dependencies are pinned and `docs/THIRD-PARTY.md` is regenerated from locked versions, the notice is
 unreliable.
 
-**Required verification:** diff `THIRD-PARTY.md` entries against the versions in `package-lock.json`.
+**Required verification:** diff `docs/THIRD-PARTY.md` entries against the versions in `package-lock.json`.
 
 ### 5.3 Worker leak path if arrayBuffer rejects after worker creation
 
@@ -582,7 +582,7 @@ recomputed as `number` without the same precision guarantee.
 | F-07 | HIGH | progressbar missing accessible name | `Progress.tsx:3` | Add `aria-label="Extracting archive"` |
 | F-08 | HIGH | No live region for status transitions | `App.tsx:101,111` | Add `role="alert"` and `aria-live` |
 | F-09 | HIGH | Scrollable list not keyboard-reachable | `FileTree.tsx:18` | Add `tabIndex={0}` |
-| F-10 | HIGH | Dependencies not pinned to exact versions | `package.json` | Pin all versions; update `THIRD-PARTY.md` |
+| F-10 | HIGH | Dependencies not pinned to exact versions | `package.json` | Pin all versions; update `docs/THIRD-PARTY.md` |
 | F-11 | MEDIUM | Per-entry allocation from untrusted declared size | `extract.ts:33` | Allocate small initial buffer; grow dynamically |
 | F-12 | MEDIUM | Cancellation cannot abort arrayBuffer read | `worker.ts:55–60` | Use AbortController + ReadableStream or move read to worker |
 | F-13 | MEDIUM | Windows reserved names not rejected | `safety.ts:26–54` | Add reserved-name check |
@@ -593,7 +593,7 @@ recomputed as `number` without the same precision guarantee.
 | F-18 | MEDIUM | Dropzone accessible name verbose | `dropzone.tsx:26` | Add concise `aria-label` |
 | F-19 | MEDIUM | No prefers-reduced-motion support | `Progress.tsx:4` | Use `motion-safe:animate-pulse` |
 | F-20 | MEDIUM | No automated accessibility CI | `.github/workflows/` | Add axe-core scan in CI |
-| F-21 | MEDIUM | THIRD-PARTY.md not verified against lock file | `THIRD-PARTY.md` | Diff and reconcile with `package-lock.json` |
+| F-21 | MEDIUM | docs/THIRD-PARTY.md not verified against lock file | `docs/THIRD-PARTY.md` | Diff and reconcile with `package-lock.json` |
 | F-22 | LOW | Object URL revoke timeout too short | `download.ts:7` | Extend timeout or use event-driven revoke |
 | F-23 | LOW | BigInt conversion from NaN not guarded | `extract.ts:30` | Guard with `Number.isFinite` |
 | F-24 | LOW | No maximum filename length | `safety.ts:26–54` | Reject segments > 255 UTF-8 bytes |

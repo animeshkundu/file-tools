@@ -7,7 +7,7 @@ Controller correlation: `unit-id: b1c4c7d6-0736-4caa-ab31-573bae3f66d8`
 ## Purpose and boundaries
 
 This research supports one bounded follow-up: write the current-main QA audit to
-`backlog/qa/audit-main.md`. It assesses the current phase only against `docs/VISION.md`,
+`docs/backlog/qa/audit-main.md`. It assesses the current phase only against `docs/VISION.md`,
 `CLAUDE.md`, the binding findings in `docs/PEER-REVIEW.md`, and the supplied acceptance criteria.
 It does not propose source edits and does not cover deferred roadmap tools, the central-directory
 engine, capture features, or a tagged release beyond naming them as out of scope.
@@ -16,11 +16,11 @@ engine, capture features, or a tagged release beyond naming them as out of scope
 
 - Product and engineering contract: `CLAUDE.md`, `docs/VISION.md`, `docs/PRODUCT-SPEC.md`,
   `docs/DESIGN.md`, `docs/ARCHITECTURE.md`, `docs/PEER-REVIEW.md`, `docs/PUBLISHING.md`,
-  `ROADMAP.md`.
+  `docs/ROADMAP.md`.
 - Unzip implementation: `entrypoints/app/App.tsx`, `lib/core/worker.ts`,
   `lib/core/safety.ts`, `lib/core/download.ts`, `lib/core/dropzone.tsx`,
   `lib/tools/unzip/*`, `components/*`.
-- Verification and delivery: `tests/*`, `package.json`, `THIRD-PARTY.md`, `wxt.config.ts`,
+- Verification and delivery: `tests/*`, `package.json`, `docs/THIRD-PARTY.md`, `wxt.config.ts`,
   `.github/workflows/*`, `README.md`.
 - Repository searches for network APIs, worker transfer/cleanup, accessibility semantics,
   permission copy, dependency ranges, standing-stream artifacts, Pages, Playwright, and
@@ -154,10 +154,10 @@ Evidence:
 - No Pages site or `/file-tools/` base-path configuration and no Pages deployment workflow exist.
 - No Playwright dependency/config/test and no workflow that boots `.output/firefox-mv3` exist.
 - No repository artifacts establish Discovery, QA-review, real-Firefox E2E, or exploratory-smoke
-  standing streams; `backlog/qa/` does not yet exist.
+  standing streams; `docs/backlog/qa/` does not yet exist.
 - CI has no accessibility, adversarial-corpus-specific, CSP-manifest, or exploratory-smoke gate.
 - Workflow actions use mutable major-version tags; package dependencies use caret ranges despite
-  `CLAUDE.md` requiring exact pins. `THIRD-PARTY.md` matches lockfile runtime versions, but
+  `CLAUDE.md` requiring exact pins. `docs/THIRD-PARTY.md` matches lockfile runtime versions, but
   `package.json` is not exact-pinned.
 - A clean `npm ci` reports nine advisories in the development dependency tree, although
   `npm audit --omit=dev` reports no runtime dependency vulnerabilities.
@@ -216,7 +216,7 @@ review.
 - Documentation describes target behavior beside shipped behavior. Audit wording must not report a
   planned capability as implemented.
 - Several remediations converge on shared files (`App.tsx`, `wxt.config.ts`, workflows,
-  `package.json`, `THIRD-PARTY.md`); follow-up units must serialize those edits.
+  `package.json`, `docs/THIRD-PARTY.md`); follow-up units must serialize those edits.
 - The no-egress claim must remain bounded: CSP, manifest tests, production-artifact tests, and
   source review strengthen enforcement but do not justify saying all egress is mechanically proven
   impossible.

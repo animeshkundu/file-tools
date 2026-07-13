@@ -171,7 +171,7 @@ Host permissions and content scripts are not planned for any feature.
    `browser.tabs.create` and contains no file access or network calls.
 3. **Read the worker entry.** Open `lib/core/worker.ts` and `lib/tools/unzip/unzip.worker.ts`.
    Confirm there are no `fetch` or `XMLHttpRequest` calls.
-4. **Review third-party dependencies.** Open `THIRD-PARTY.md` for the full bill of materials.
+4. **Review third-party dependencies.** Open `docs/THIRD-PARTY.md` for the full bill of materials.
    Inspect each package in `node_modules` or its source repository if you need higher assurance.
 5. **Run the test suite.** `npm run check` runs the compiler, linter, and Vitest suite
    including safety tests over adversarial ZIP fixtures.

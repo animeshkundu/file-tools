@@ -2,9 +2,9 @@
 
 > Decision-ready synthesis of the File / Media / Photo tools research.
 > Read this first, then the three per-extension docs. Last updated 2026-07-12.
-> Per-extension detail: [`ext-1-file-tools.md`](./ext-1-file-tools.md) ·
-> [`ext-2-media-tools.md`](./ext-2-media-tools.md) · [`ext-3-photo-tools.md`](./ext-3-photo-tools.md).
-> Incumbent source teardown: [`../research/incumbents/TEARDOWN.md`](../research/incumbents/TEARDOWN.md).
+> Per-extension detail in this repository: [`ext-1-file-tools.md`](./ext-1-file-tools.md).
+> The Media Tools and Photo Tools research lives in their respective repositories.
+> Incumbent source teardown: [`TEARDOWN.md`](../TEARDOWN.md).
 
 ## 1. The thesis (one paragraph)
 
