@@ -5,8 +5,8 @@ export default defineConfig({
   manifestVersion: 3,
   modules: ['@wxt-dev/module-react'],
   manifest: {
-    name: 'File Tools',
-    description: 'Open ZIP files offline and privately — nothing is uploaded.',
+    name: 'Unzip',
+    description: 'Private, offline ZIP extraction for Firefox and Chrome, entirely in your browser.',
     permissions: [],
     action: {},
     content_security_policy: {
@@ -15,7 +15,7 @@ export default defineConfig({
     },
     browser_specific_settings: {
       gecko: {
-        id: 'file-tools@local',
+        id: 'unzip@animesh.kundus.in',
         data_collection_permissions: { required: ['none'] },
       },
     },

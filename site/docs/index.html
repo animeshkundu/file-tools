@@ -4,15 +4,15 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="light" />
-  <meta name="description" content="File Tools documentation — how to use Unzip, privacy boundaries, permissions, safety limits, and browser support." />
-  <title>Docs — File Tools</title>
+  <meta name="description" content="Unzip documentation: privacy boundaries, permissions, safety limits, and browser support." />
+  <title>Unzip docs</title>
   <link rel="stylesheet" href="/file-tools/styles.css" />
 </head>
 <body>
   <a class="skip-link" href="#main-content">Skip to main content</a>
 
   <header class="site-header">
-    <a class="brand" href="/file-tools/" aria-label="File Tools home">FILE TOOLS</a>
+    <a class="brand" href="/file-tools/" aria-label="Unzip home">Unzip</a>
     <nav aria-label="Site">
       <ul class="site-nav">
         <li><a href="/file-tools/">Home</a></li>
@@ -29,7 +29,7 @@
         <header class="page-header">
           <div>
             <p class="eyebrow">DOCUMENTATION</p>
-            <h1>File Tools docs</h1>
+            <h1>Unzip docs</h1>
             <p class="lede">
               How to use the Unzip extension, what it can and cannot do, and what the privacy
               boundaries actually mean.
@@ -41,14 +41,13 @@
           <div class="card">
             <h2 id="using-unzip-heading">Using Unzip</h2>
             <p>
-              The Unzip tool is built into the File Tools browser extension. Open the extension page
-              by clicking the toolbar icon or pinning File Tools and clicking it. No additional setup
-              is needed.
+              Unzip is a browser extension. Open its page by clicking the toolbar icon, or pin the
+              extension and click it. No additional setup is needed.
             </p>
 
             <h3>Extracting a ZIP file</h3>
             <ol>
-              <li>Open the File Tools extension page.</li>
+              <li>Open the Unzip extension page.</li>
               <li>
                 Drop a ZIP file onto the drop zone, or click the zone (or press
                 <kbd>Enter</kbd>/<kbd>Space</kbd> when it has keyboard focus) to open a file picker.
@@ -98,6 +97,15 @@
               Local processing, no upload; zero install-time permissions for the core; optional
               <code>downloads</code> permission requested only for tree-preserving extract-all.
             </blockquote>
+
+            <p>
+              This is the designed capability contract. In the current v0.1.0 release, the manifest
+              declares no permissions at all. Both single-file downloads and "Download all" (which
+              builds a fresh ZIP inside the page) save through the browser's standard download from an
+              in-page blob. The optional <code>downloads</code> permission is planned, not yet shipped,
+              and would be requested only when a future tree-preserving "Extract all to folders"
+              feature is first used, never at install.
+            </p>
 
             <p>
               All ZIP parsing and extraction runs in a Web Worker inside the extension's sandboxed
@@ -154,10 +162,12 @@
                 </tr>
                 <tr>
                   <td><code>downloads</code></td>
-                  <td>First use of "Download all"</td>
+                  <td>Planned (not in v0.1.0)</td>
                   <td>
-                    Required by the browser API to save multiple files while preserving folder paths.
-                    Declining this permission does not prevent single-file downloads.
+                    Not declared in the current release. It is reserved for a future tree-preserving
+                    "Extract all to folders" feature and, when added, would be requested only on first
+                    use of that feature, never at install. Today's "Download all" builds a fresh ZIP and
+                    saves it with a standard browser download, requesting no permission.
                   </td>
                 </tr>
               </tbody>
@@ -209,7 +219,7 @@
           <div class="card">
             <h2 id="browsers-heading">Browser support</h2>
             <p>
-              File Tools is a standard MV3 browser extension and ships to Chrome and Firefox from a
+              Unzip is a standard MV3 browser extension and ships to Chrome and Firefox from a
               single codebase using the <code>browser.*</code> namespace for cross-browser
               compatibility.
             </p>

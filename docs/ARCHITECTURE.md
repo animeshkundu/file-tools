@@ -287,7 +287,7 @@ surface between tools, so adding tool #2 can't silently couple to tool #1's inte
   Chrome's callback/promise-mixed `chrome.*` API and Firefox's promise-native `browser.*` API
   behind one call site; `background.ts` and anywhere else that touches extension APIs never
   branch on browser.
-- **`browser_specific_settings.gecko.id`** (`file-tools@local`) is set in `wxt.config.ts` because
+- **`browser_specific_settings.gecko.id`** (`unzip@animesh.kundus.in`) is set in `wxt.config.ts` because
   Firefox requires an explicit add-on ID for signing/distribution; Chrome ignores this key.
 - **`data_collection_permissions.required: ['none']`** is declared for Firefox's data-collection
   disclosure requirement, a direct, machine-checkable expression of "no data leaves the device."

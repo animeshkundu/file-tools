@@ -1,6 +1,6 @@
 # Unzip
 
-Private, safe ZIP extraction for Firefox and Chrome, entirely in your browser.
+Private, offline ZIP extraction for Firefox and Chrome, entirely in your browser.
 
 ![Unzip showing an extracted ZIP file tree](docs/media/screenshots/unzip-ready.png)
 
@@ -11,6 +11,24 @@ Private, safe ZIP extraction for Firefox and Chrome, entirely in your browser.
 > **Your files never leave your device; no uploads, no accounts, no telemetry; all processing local.**
 
 A strict no-egress content-security policy plus zero install-time permissions constrain network access; the empty permissions and no-egress content-security policy are checked in CI against the built manifest. See [docs/PEER-REVIEW.md](docs/PEER-REVIEW.md) and [docs/TEARDOWN.md](docs/TEARDOWN.md).
+
+## Permissions and CSP
+
+Unzip ships with an empty permission list and a strict no-egress content-security policy. Both are checked in CI against the built manifest on every change.
+
+Declared permissions:
+
+```json
+"permissions": []
+```
+
+Extension-page content-security policy:
+
+```
+default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'
+```
+
+`connect-src 'none'` blocks network connections from the extension page, `form-action 'none'` blocks form submissions, and `object-src`, `base-uri`, and `default-src` are locked to `'none'`. Saving a file uses a standard browser download from an in-page blob, so no `downloads` permission is requested. An empty permission list is not a privacy proof by itself, so the capability contract is verified through source review, the built manifests, and production-artifact tests. See [docs/PEER-REVIEW.md](docs/PEER-REVIEW.md) and [docs/TEARDOWN.md](docs/TEARDOWN.md).
 
 ## Features
 
@@ -49,8 +67,15 @@ Unsafe, unsupported, or damaged archives fail closed with a clear message.
 
 ## Install
 
-- **Firefox:** coming soon (AMO)
-- **Chrome:** coming soon (Chrome Web Store)
+Unzip v0.1.0 is a developer preview. Signed store listings are on the way:
+
+- **Firefox (AMO):** coming soon
+- **Chrome (Chrome Web Store):** coming soon
+
+Until then, run it from the latest [release](https://github.com/animeshkundu/file-tools/releases) build:
+
+- **Chrome:** unzip `file-tools-<version>-chrome.zip`, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder.
+- **Firefox:** unzip `file-tools-<version>-firefox.zip`, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `manifest.json` from the extracted folder. A temporary add-on is cleared when Firefox restarts; a signed AMO build for persistent installation is coming soon.
 
 ## Verify your download
 

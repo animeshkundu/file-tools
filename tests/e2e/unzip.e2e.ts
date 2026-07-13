@@ -24,7 +24,7 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
 const EXT_DIR = path.join(REPO_ROOT, '.output/firefox-mv3');
 const FIXTURE_ZIP = path.join(__dirname, 'fixtures/sample.zip');
-const EXT_ID = 'file-tools@local';
+const EXT_ID = 'unzip@animesh.kundus.in';
 
 // ---------------------------------------------------------------------------
 // Helpers
