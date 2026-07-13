@@ -131,6 +131,8 @@ h1 span { color: var(--emerald-700); }
 .privacy-icon { display: grid; place-items: center; width: 3.2rem; height: 3.2rem; border-radius: 1rem; color: white; background: var(--emerald-700); font-size: 1.35rem; font-weight: 900; }
 .privacy-card h2 { margin: 0; font-size: clamp(1.45rem, 3vw, 2.15rem); }
 .privacy-promise { max-width: 47rem; margin: .5rem 0 0; color: var(--stone-700); font-size: .96rem; }
+.privacy-evidence { max-width: 47rem; margin: .65rem 0 0; color: var(--stone-600); font-size: .78rem; line-height: 1.55; }
+.privacy-evidence a { color: var(--emerald-800); }
 .privacy-facts { display: grid; gap: .45rem; padding-left: 1.5rem; border-left: 1px solid var(--emerald-200); color: var(--stone-600); font-size: .78rem; }
 .privacy-facts strong { color: var(--emerald-800); }
 
