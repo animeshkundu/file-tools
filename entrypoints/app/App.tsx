@@ -205,9 +205,11 @@ export default function App() {
               <div>
                 <p className="text-sm text-stone-500">{archiveName}</p>
                 <h2 ref={readyHeadingRef} tabIndex={-1} className="mt-1 text-2xl font-bold text-stone-950">
-                  {entries.length} {entries.length === 1 ? 'file' : 'files'} ready to download ·{' '}
-                  {formatBytes(totalBytes)}
+                  Files ready to download
                 </h2>
+                <p className="mt-1 text-sm text-stone-500">
+                  {entries.length} {entries.length === 1 ? 'file' : 'files'} · {formatBytes(totalBytes)}
+                </p>
               </div>
               <div className="flex gap-2">
                 <Button secondary onClick={reset}>
