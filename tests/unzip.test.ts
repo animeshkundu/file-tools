@@ -223,7 +223,7 @@ describe('extractZip', () => {
       10,
     );
 
-    const createInflateMock = (chunksProcessed: number[]) =>
+    const createInflateSpyWithChunkTracking = (chunksProcessed: number[]) =>
       vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
         this: UnzipInflate,
         _data,
@@ -236,14 +236,14 @@ describe('extractZip', () => {
       });
 
     const extractZipChunksProcessed: number[] = [];
-    createInflateMock(extractZipChunksProcessed);
+    createInflateSpyWithChunkTracking(extractZipChunksProcessed);
     expect(() => extractZip(archive)).toThrow(/per-entry/u);
     expect(extractZipChunksProcessed).toEqual([1]);
 
     vi.restoreAllMocks();
 
     const extractZipFileChunksProcessed: number[] = [];
-    createInflateMock(extractZipFileChunksProcessed);
+    createInflateSpyWithChunkTracking(extractZipFileChunksProcessed);
     await expect(
       extractZipFile(fileFromBytes(archive, 'declared-size-cap.zip'), { onEntry: vi.fn() }),
     ).rejects.toThrow(/per-entry/u);

@@ -278,6 +278,10 @@ function assertEntryChunkWithinLimit(
   return nextSize;
 }
 
+function computeEntryByteLimit(declaredSize: bigint, maxEntryBytes: bigint): bigint {
+  return declaredSize < maxEntryBytes ? declaredSize : maxEntryBytes;
+}
+
 function joinEntryChunks(chunks: Uint8Array[], size: number): Uint8Array {
   const output = new Uint8Array(size);
   let offset = 0;
@@ -310,7 +314,7 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
 
     const path = budget.addEntry(file.name, centralEntry.kind);
     const declaredSize = BigInt(centralEntry.uncompressedSize);
-    const entryByteLimit = declaredSize < maxEntryBytes ? declaredSize : maxEntryBytes;
+    const entryByteLimit = computeEntryByteLimit(declaredSize, maxEntryBytes);
     if (centralEntry.kind === 'directory') {
       file.ondata = (error, chunk) => {
         if (error) {
@@ -540,7 +544,7 @@ export async function extractZipFile(
     }
     const path = budget.addEntry(archiveEntry.name, centralEntry.kind);
     const declaredSize = BigInt(centralEntry.uncompressedSize);
-    const entryByteLimit = declaredSize < maxEntryBytes ? declaredSize : maxEntryBytes;
+    const entryByteLimit = computeEntryByteLimit(declaredSize, maxEntryBytes);
     if (centralEntry.kind === 'directory') {
       activeEntry = true;
       archiveEntry.ondata = (error, chunk, final) => {

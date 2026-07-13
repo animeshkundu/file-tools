@@ -35,6 +35,8 @@ const MAX_PATH_SEGMENT_BYTES = 255;
 const TEXT_ENCODER = new TextEncoder();
 
 export function foldArchivePathForComparison(path: string): string {
+  // NFC first collapses canonically equivalent spellings onto one representation before case
+  // folding, so composed/decomposed variants cannot evade collision checks.
   // NTFS case folding can collide characters such as µ/μ after the filesystem uppercases and
   // compares names. Running uppercase before lowercase ensures characters that only converge after
   // uppercasing (µ→Μ and μ→Μ) fold to the same final key, matching the filesystem collision check.
