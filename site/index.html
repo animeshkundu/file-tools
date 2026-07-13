@@ -31,7 +31,7 @@
       <div class="shell hero-copy">
         <p class="eyebrow"><span class="status-dot" aria-hidden="true"></span> Private by design</p>
         <h1 id="hero-title">Unzip files.<br /><span>Keep them yours.</span></h1>
-        <p class="hero-lede">Open, inspect, and download ZIP archives entirely in your browser. Fast enough for everyday work, hardened for the files you do not trust.</p>
+        <p class="hero-lede">Private, offline ZIP extraction for Firefox and Chrome, entirely in your browser. Fast enough for everyday work, hardened for the files you do not trust.</p>
         <div class="hero-actions">
           <a class="button button-primary" href="#install">Get Unzip <span aria-hidden="true">↓</span></a>
           <a class="button button-secondary" href="#demo">Watch the demo <span aria-hidden="true">▶</span></a>
@@ -70,6 +70,25 @@
           <span><strong>Zero</strong> telemetry</span>
           <span><strong>No</strong> account</span>
         </div>
+      </div>
+    </section>
+
+    <section class="section shell csp-section" id="enforcement" aria-labelledby="csp-title">
+      <div class="section-heading">
+        <p class="eyebrow">How privacy is enforced</p>
+        <h2 id="csp-title">The receipt, not just the promise.</h2>
+        <p>Unzip ships with an empty permission list and a strict no-egress content-security policy. Both are checked in CI against the built manifest on every change.</p>
+      </div>
+      <div class="csp-receipt">
+        <div class="csp-block">
+          <p class="csp-label">Declared permissions</p>
+          <pre><code>"permissions": []</code></pre>
+        </div>
+        <div class="csp-block">
+          <p class="csp-label">Extension-page content-security policy</p>
+          <pre><code>default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'</code></pre>
+        </div>
+        <p class="csp-note"><code>connect-src 'none'</code> blocks network connections from the extension page, and saving a file uses your browser's standard download from an in-page blob, so no <code>downloads</code> permission is requested. An empty permission list is not a privacy proof by itself, so the contract is also verified through source review, the built manifests, and production-artifact tests. See the <a href="https://github.com/animeshkundu/file-tools/blob/main/docs/PEER-REVIEW.md">peer review</a> and <a href="/file-tools/docs/">technical teardown</a>.</p>
       </div>
     </section>
 
@@ -145,7 +164,7 @@
           <span class="feature-number">10</span>
           <div class="feature-icon" aria-hidden="true">0</div>
           <h3>Zero permissions</h3>
-          <p>The core requests no install-time permissions. Optional download access appears only when needed.</p>
+          <p>Unzip requests no install-time permissions. Saving a file uses your browser's standard download, so no download permission is requested.</p>
         </article>
       </div>
     </section>
@@ -198,9 +217,12 @@
       <div class="shell install-card">
         <div class="install-copy">
           <p class="eyebrow">Install Unzip</p>
-          <h2 id="install-title">Private extraction, one click away.</h2>
-          <p>Store releases are coming soon. Until then, follow development and review every line in the open-source repository.</p>
-          <a class="button button-primary" href="https://github.com/animeshkundu/file-tools">View on GitHub <span aria-hidden="true">↗</span></a>
+          <h2 id="install-title">A developer preview you can run today.</h2>
+          <p>Signed store listings are on the way. Until then, download the latest release build and load it unpacked: in Chrome via <code>chrome://extensions</code> (Developer mode, then Load unpacked), or in Firefox via <code>about:debugging</code> (Load Temporary Add-on). A temporary add-on is cleared when Firefox restarts.</p>
+          <div class="hero-actions">
+            <a class="button button-primary" href="https://github.com/animeshkundu/file-tools/releases">Download the release <span aria-hidden="true">↓</span></a>
+            <a class="button button-secondary" href="https://github.com/animeshkundu/file-tools">View on GitHub <span aria-hidden="true">↗</span></a>
+          </div>
         </div>
         <div class="store-list" aria-label="Browser store availability">
           <div class="store-card">

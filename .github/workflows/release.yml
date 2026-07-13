@@ -92,7 +92,7 @@ jobs:
             .output/*.cosign.bundle
           fail_on_unmatched_files: true
           body: |
-            **Unzip** — private, safe ZIP extraction for Firefox and Chrome, entirely in your browser.
+            **Unzip**: private, offline ZIP extraction for Firefox and Chrome, entirely in your browser.
 
             > Your files never leave your device; no uploads, no accounts, no telemetry; all processing local.
 
@@ -110,8 +110,10 @@ jobs:
             Runs on current stable Firefox and Chrome (MV3).
 
             ### Install
-            - Firefox (AMO): coming soon
-            - Chrome (Chrome Web Store): coming soon
+            This is a developer preview; signed store listings are on the way.
+            - Chrome: unzip the `-chrome.zip` asset, open `chrome://extensions`, enable Developer mode, choose Load unpacked, and select the extracted folder.
+            - Firefox: unzip the `-firefox.zip` asset, open `about:debugging#/runtime/this-firefox`, choose Load Temporary Add-on, and select `manifest.json`. A temporary add-on is cleared when Firefox restarts.
+            - Firefox (AMO) and Chrome (Chrome Web Store): coming soon.
 
             ### Verify your download
             Download `SHA256SUMS` alongside the ZIP files, then verify their checksums:

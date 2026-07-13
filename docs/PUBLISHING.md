@@ -74,10 +74,10 @@ The manifest already declares:
 
 - Manifest V3.
 - Zero optional or required extension permissions.
-- `browser_specific_settings.gecko.id` as `file-tools@local`.
+- `browser_specific_settings.gecko.id` as `unzip@animesh.kundus.in`.
 - `browser_specific_settings.gecko.data_collection_permissions.required` as `['none']`, which declares that the extension does not collect data.
 
-Replace `file-tools@local` with a real identifier or owned email-style ID before the first production AMO submission. Keep that ID stable after release because Firefox uses it as the extension identity.
+The Gecko ID is the owned, email-style identifier `unzip@animesh.kundus.in`. Keep it stable after release because Firefox uses it as the extension identity.
 
 Prepare these listing assets and fields before submission:
 
