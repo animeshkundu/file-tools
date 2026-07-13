@@ -156,6 +156,28 @@ describe('extractZip', () => {
     expect(strFromU8(entries[0]!.bytes)).toBe('hello, private world');
   });
 
+  it('rejects case-insensitive central-directory path collisions but accepts distinct names', async () => {
+    const collidingArchive = zipSync({
+      'README.txt': strToU8('upper'),
+      'readme.txt': strToU8('lower'),
+    });
+
+    expect(() => extractZip(collidingArchive)).toThrow(/case-colliding entry names/u);
+    await expect(
+      extractZipFile(fileFromBytes(collidingArchive, 'collision.zip'), { onEntry: vi.fn() }),
+    ).rejects.toThrow(/case-colliding entry names/u);
+
+    const distinctArchive = zipSync({
+      'README.txt': strToU8('readme'),
+      'README.md': strToU8('markdown'),
+    });
+
+    expect(extractZip(distinctArchive).map((entry) => entry.path)).toEqual([
+      'README.txt',
+      'README.md',
+    ]);
+  });
+
   it('enforces the emitted byte cap while extracting', () => {
     const archive = zipSync({ 'large.txt': strToU8('12345') });
     expect(() => extractZip(archive, { maxEmittedBytes: 4n })).toThrow(/extraction limit/u);

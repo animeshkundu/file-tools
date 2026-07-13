@@ -197,12 +197,20 @@ function buildCentralDirectoryIndex(archive: Uint8Array): Map<string, CentralDir
   for (const entry of entries) {
     validateLocalHeaderMatchesCentral(archive, entry);
   }
+  const comparableNames = new Set<string>();
   const index = new Map<string, CentralDirectoryEntry>();
   for (const entry of entries) {
     if (index.has(entry.name)) {
       throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
     }
+    const comparableName = entry.name.normalize('NFC').toLowerCase();
+    if (comparableNames.has(comparableName)) {
+      throw new ArchiveSafetyError(
+        'Archive central directory contains case-colliding entry names.',
+      );
+    }
     index.set(entry.name, entry);
+    comparableNames.add(comparableName);
   }
   return index;
 }
@@ -494,13 +502,21 @@ export async function extractZipFile(
   const { limits, maxEntryBytes } = splitLimits(options);
   const budget = new ArchiveSafetyBudget({ ...DEFAULT_ARCHIVE_LIMITS, ...limits });
   const centralEntries = await readCentralDirectoryEntriesFromFile(file, budget.limits.maxEntries);
+  const comparableNames = new Set<string>();
   const centralEntriesByName = new Map<string, CentralDirectoryEntry>();
   for (const entry of centralEntries) {
     await validateLocalHeaderFromFile(file, entry);
     if (centralEntriesByName.has(entry.name)) {
       throw new ArchiveSafetyError('Archive central directory contains duplicate entry names.');
     }
+    const comparableName = entry.name.normalize('NFC').toLowerCase();
+    if (comparableNames.has(comparableName)) {
+      throw new ArchiveSafetyError(
+        'Archive central directory contains case-colliding entry names.',
+      );
+    }
     centralEntriesByName.set(entry.name, entry);
+    comparableNames.add(comparableName);
     const declaredSize = toBigIntSize(entry.uncompressedSize);
     budget.checkDeclaredSize(declaredSize);
     if (declaredSize > maxEntryBytes) {
