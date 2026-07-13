@@ -52,10 +52,6 @@ function parsePolicy(policy) {
 
   for (const character of policy) {
     const codePoint = character.codePointAt(0);
-    if (codePoint === undefined) {
-      throw new Error('CSP contains an unreadable character');
-    }
-
     if (character === ';') {
       flushDirective();
       continue;
@@ -64,10 +60,6 @@ function parsePolicy(policy) {
     if (ALLOWED_ASCII_WHITESPACE.has(codePoint)) {
       flushToken();
       continue;
-    }
-
-    if (codePoint > 127) {
-      throw new Error('CSP contains a non-ASCII character');
     }
 
     const isAsciiControl = codePoint < 32 || codePoint === 127;
