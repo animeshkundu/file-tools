@@ -1,62 +1,84 @@
-# File Tools
+# Unzip
 
-A privacy-first Chrome and Firefox extension for opening ZIP files entirely on your device, with no upload, account, ads, or tracking. Its CSP blocks fetch, XHR, WebSocket, beacon, form, and frame egress; the extension implements no navigation or WebRTC egress and requests no host or install-time permissions.
+Private, safe ZIP extraction for Firefox and Chrome, entirely in your browser.
 
-## Privacy and capabilities
+![Unzip showing an extracted ZIP file tree](docs/media/screenshots/unzip-ready.png)
 
-**Contract:** local processing, no upload; zero install-time permissions for the core; optional
-`downloads` permission requested only at the moment the user invokes tree-preserving multi-file
-save — never at install.
+[![CI](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/ci.yml?branch=main&label=CI)](https://github.com/animeshkundu/file-tools/actions/workflows/ci.yml) [![Firefox E2E](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/e2e.yml?branch=main&label=Firefox%20E2E)](https://github.com/animeshkundu/file-tools/actions/workflows/e2e.yml) [![MIT License](https://img.shields.io/github/license/animeshkundu/file-tools?label=License)](LICENSE)
 
-| Guarantee | Status |
-| --- | --- |
-| Zero install-time permissions | ✓ shipped — `permissions: []` in the manifest |
-| All file work runs on-device in a Web Worker | ✓ shipped |
-| No host permissions, no content scripts | ✓ shipped |
-| No telemetry, analytics, or account | ✓ shipped |
-| Firefox `data_collection_permissions: { "required": ["none"] }` | ✓ shipped |
-| Archive safety (Zip-Slip, byte cap, time cap) | ✓ shipped |
-| Full no-egress CSP (`connect-src 'none'`, etc.) | ○ target — current CSP is partial |
-| CI check over built manifests for egress sources | ○ target — not yet implemented |
-| Optional `downloads` permission for tree extract | ○ target — feature not yet built |
-| Production-artifact integration tests | ○ target — planned release gate |
+## The privacy promise
 
-"✓ shipped" means true on `main` today and verifiable in source. "○ target" means the control is
-planned but not yet present; until then, source review is the enforcement path.
+> **Your files never leave your device. No uploads, no accounts, no telemetry. All processing runs locally in your browser.**
 
-See [`docs/CAPABILITIES.md`](docs/CAPABILITIES.md) for the full contract, verification steps,
-and an explanation of what the permission model does and does not technically prevent.
+A strict no-egress content-security policy plus zero install-time permissions constrain network access; verified by CI and production-artifact tests.
 
-## Included seed tool
+## Features
 
-**Unzip:** drop a standard `.zip`, inspect its safely validated file tree, download individual files, or download all files as a fresh ZIP. Extraction runs in a page-hosted Web Worker and can be cancelled. Zip-Slip and archive-expansion limits are enforced before results reach the UI.
+- **Streaming, bounded-memory extraction** with per-entry and aggregate caps.
+- **Defensive ZIP parsing** driven by the central directory and designed to fail closed. Encrypted, Zip64 and larger-than-4 GB, corrupt, crafted, and ghost archives are rejected with friendly messages.
+- **Full path safety** against zip-slip, absolute, UNC, and drive paths; Windows reserved names; bidi and Unicode spoofing; and case-colliding names.
+- **Fast navigation at scale** with a virtualized, sortable, filterable file tree for large archives and high entry counts.
+- **Flexible downloads** for one file or the full tree, preserving structure and generating collision-safe names.
+- **Safe interruption** with cancellation and a drop-outside guard that prevents accidental data loss.
+- **Accessible by design**, meeting WCAG AA with a live axe gate in CI.
+- **Real-Firefox end-to-end coverage** in CI, not browser emulation.
+- **One MV3 codebase** for Chrome and Firefox.
+- **Zero install-time permissions.**
 
-`fflate` does not support Zip64, TAR, or bzip2. See `CLAUDE.md` for format and security guardrails.
+## Screenshots
 
-## Develop
+### Start with a ZIP
 
-```sh
-npm install
-npm run dev
-npm run dev:firefox
-```
+Drop an archive or choose one from your device.
 
-## Verify and build
+![Unzip empty state with its ZIP dropzone](docs/media/screenshots/unzip-idle.png)
+
+### Inspect and download
+
+Browse the extracted tree, filter or sort entries, then download one file or everything.
+
+![Unzip ready state with an extracted file tree](docs/media/screenshots/unzip-ready.png)
+
+### Friendly failures
+
+Unsafe, unsupported, or damaged archives fail closed with a clear message.
+
+![Unzip friendly archive error state](docs/media/screenshots/unzip-error.png)
+
+[Watch the short real-Firefox demo](docs/media/unzip-demo.webm)
+
+## Install
+
+- **Firefox:** coming soon (AMO)
+- **Chrome:** coming soon (Chrome Web Store)
+
+## How it works
+
+A durable extension app page owns the interface and operation lifetime, while a page-owned Web Worker keeps archive work off the UI thread. Extraction uses `fflate` within its standard-ZIP boundary, guarded by fail-closed validation and a strict no-egress CSP. Read the [vision](docs/VISION.md), [product specification](docs/PRODUCT-SPEC.md), [architecture](docs/ARCHITECTURE.md), and [design guide](docs/DESIGN.md).
+
+## Development
+
+Install dependencies with `npm install`, then use the scripts below:
+
+| Task             | Chrome          | Firefox                 |
+| ---------------- | --------------- | ----------------------- |
+| Development      | `npm run dev`   | `npm run dev:firefox`   |
+| Production build | `npm run build` | `npm run build:firefox` |
+
+Quality and test commands:
 
 ```sh
 npm run check
-npm run build
-npm run build:firefox
+npm run test
+npm run test:e2e
 ```
 
-Production extension directories are emitted under `.output/`. The toolbar action opens the durable full-page app instead of a popup, and the extension requests zero permissions.
+To load an unpacked production build:
 
-## Architecture
+1. Build the target browser.
+2. In Chrome, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select `.output/chrome-mv3`.
+3. In Firefox, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `.output/firefox-mv3/manifest.json`.
 
-- `entrypoints/app/`: durable React tool host
-- `entrypoints/background.ts`: glue that opens the app tab
-- `lib/core/`: shared drop, download, worker, formatting, and mandatory archive-safety logic
-- `lib/tools/unzip/`: flagship extraction implementation and worker
-- `components/`: reusable Tailwind UI
-- `tests/`: safety and real ZIP round-trip tests
-- `docs/`: product, engineering, research, teardown, and backlog documentation
+## License
+
+Licensed under the [MIT License](LICENSE).
