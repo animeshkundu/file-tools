@@ -34,7 +34,11 @@ export const Dropzone = forwardRef<HTMLDivElement, DropzoneProps>(function Dropz
         event.preventDefault();
         if (!disabled) setDragging(true);
       }}
-      onDragLeave={() => setDragging(false)}
+      onDragLeave={(event) => {
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+          setDragging(false);
+        }
+      }}
       onDragOver={(event) => event.preventDefault()}
       onDrop={onDrop}
       role="button"
