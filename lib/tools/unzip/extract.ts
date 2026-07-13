@@ -269,13 +269,10 @@ function abortEntry(entry: TerminableEntry, error: unknown): never {
 function assertEntryChunkWithinLimit(
   currentSize: number,
   chunkSize: number,
-  maxEntryBytes: bigint,
-  declaredSize: number,
+  entryByteLimit: bigint,
 ): number {
   const nextSize = currentSize + chunkSize;
-  const declaredSizeAsBigInt = BigInt(declaredSize);
-  const effectiveLimit = declaredSizeAsBigInt < maxEntryBytes ? declaredSizeAsBigInt : maxEntryBytes;
-  if (!Number.isSafeInteger(nextSize) || BigInt(nextSize) > effectiveLimit) {
+  if (!Number.isSafeInteger(nextSize) || BigInt(nextSize) > entryByteLimit) {
     throw new ArchiveSafetyError('Archive entry expanded beyond the per-entry extraction limit.');
   }
   return nextSize;
@@ -312,6 +309,8 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
     }
 
     const path = budget.addEntry(file.name, centralEntry.kind);
+    const declaredSize = BigInt(centralEntry.uncompressedSize);
+    const entryByteLimit = declaredSize < maxEntryBytes ? declaredSize : maxEntryBytes;
     if (centralEntry.kind === 'directory') {
       file.ondata = (error, chunk) => {
         if (error) {
@@ -337,12 +336,7 @@ export function extractZip(archive: Uint8Array, options: ExtractOptions = {}): E
             `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        const nextSize = assertEntryChunkWithinLimit(
-          size,
-          chunk.byteLength,
-          maxEntryBytes,
-          centralEntry.uncompressedSize,
-        );
+        const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, entryByteLimit);
         budget.addEmittedBytes(chunk.byteLength);
         if (chunk.byteLength > 0) {
           chunks.push(chunk);
@@ -545,6 +539,8 @@ export async function extractZipFile(
       throw new ArchiveSafetyError('Archive entry is missing from the central directory.');
     }
     const path = budget.addEntry(archiveEntry.name, centralEntry.kind);
+    const declaredSize = BigInt(centralEntry.uncompressedSize);
+    const entryByteLimit = declaredSize < maxEntryBytes ? declaredSize : maxEntryBytes;
     if (centralEntry.kind === 'directory') {
       activeEntry = true;
       archiveEntry.ondata = (error, chunk, final) => {
@@ -573,12 +569,7 @@ export async function extractZipFile(
             `Archive entry failed to extract: ${error instanceof Error ? error.message : String(error)}`,
           );
         }
-        const nextSize = assertEntryChunkWithinLimit(
-          size,
-          chunk.byteLength,
-          maxEntryBytes,
-          centralEntry.uncompressedSize,
-        );
+        const nextSize = assertEntryChunkWithinLimit(size, chunk.byteLength, entryByteLimit);
         budget.addEmittedBytes(chunk.byteLength);
         if (chunk.byteLength > 0) {
           chunks.push(chunk);

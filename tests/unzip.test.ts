@@ -223,38 +223,31 @@ describe('extractZip', () => {
       10,
     );
 
-    const createInflateMock = (
-      afterFirstChunk: { value: boolean },
-      afterSecondChunk: { value: boolean },
-    ) =>
+    const createInflateMock = (chunksProcessed: number[]) =>
       vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
         this: UnzipInflate,
         _data,
         final,
       ) {
         this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5, 6), false);
-        afterFirstChunk.value = true;
+        chunksProcessed.push(1);
         this.ondata(null, Uint8Array.of(7, 8, 9, 10, 11, 12), final);
-        afterSecondChunk.value = true;
+        chunksProcessed.push(2);
       });
 
-    const extractZipAfterFirstChunk = { value: false };
-    const extractZipAfterSecondChunk = { value: false };
-    createInflateMock(extractZipAfterFirstChunk, extractZipAfterSecondChunk);
+    const extractZipChunksProcessed: number[] = [];
+    createInflateMock(extractZipChunksProcessed);
     expect(() => extractZip(archive)).toThrow(/per-entry/u);
-    expect(extractZipAfterFirstChunk.value).toBe(true);
-    expect(extractZipAfterSecondChunk.value).toBe(false);
+    expect(extractZipChunksProcessed).toEqual([1]);
 
     vi.restoreAllMocks();
 
-    const extractZipFileAfterFirstChunk = { value: false };
-    const extractZipFileAfterSecondChunk = { value: false };
-    createInflateMock(extractZipFileAfterFirstChunk, extractZipFileAfterSecondChunk);
+    const extractZipFileChunksProcessed: number[] = [];
+    createInflateMock(extractZipFileChunksProcessed);
     await expect(
       extractZipFile(fileFromBytes(archive, 'declared-size-cap.zip'), { onEntry: vi.fn() }),
     ).rejects.toThrow(/per-entry/u);
-    expect(extractZipFileAfterFirstChunk.value).toBe(true);
-    expect(extractZipFileAfterSecondChunk.value).toBe(false);
+    expect(extractZipFileChunksProcessed).toEqual([1]);
   });
 
   it('streams directory records without accepting hidden payload data', () => {
