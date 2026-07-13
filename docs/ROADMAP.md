@@ -1,6 +1,6 @@
 # Roadmap
 
-A living checklist derived from `.docs/ext-1-file-tools.md` §11.
+A living checklist derived from `research/ext-1-file-tools.md` §11.
 
 ## Phase 1 — MVP
 

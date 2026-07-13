@@ -2,7 +2,7 @@
 
 > Scope: browser extensions and web apps that overlap with the File Tools mission
 > (offline ZIP/archive extraction, file hashing, base64, split/merge, metadata).
-> Sourced from firsthand CRX teardowns (see `.docs/TEARDOWN.md`), AMO v5 API sweep
+> Sourced from firsthand CRX teardowns (see `docs/TEARDOWN.md`), AMO v5 API sweep
 > (2026-07-12), Chrome Web Store listings, and live site review.
 > Desktop-only tools are included only for reference framing.
 

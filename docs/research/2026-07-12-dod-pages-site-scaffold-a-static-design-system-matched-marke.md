@@ -26,7 +26,7 @@ exact-pinned, secret-free Pages workflow without crossing this unit's ownership 
 ### Product and privacy copy
 
 - The current product is a single cross-browser MV3 Unzip extension, not the broader future toolkit
-  (`docs/ARCHITECTURE.md:9-18`, `ROADMAP.md:5-27`).
+  (`docs/ARCHITECTURE.md:9-18`, `docs/ROADMAP.md:5-27`).
 - The governing capability wording is:
 
   > Local processing, no upload; zero install-time permissions for the core; optional `downloads`
@@ -120,7 +120,7 @@ exact-pinned, secret-free Pages workflow without crossing this unit's ownership 
 - [`docs/ARCHITECTURE.md`](../ARCHITECTURE.md)
 - [`docs/PEER-REVIEW.md`](../PEER-REVIEW.md)
 - [`docs/PUBLISHING.md`](../PUBLISHING.md)
-- [`ROADMAP.md`](../../ROADMAP.md)
+- [`docs/ROADMAP.md`](../ROADMAP.md)
 - [`mocks/home.html`](../../mocks/home.html)
 - [`assets/tailwind.css`](../../assets/tailwind.css)
 

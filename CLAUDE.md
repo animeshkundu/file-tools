@@ -12,9 +12,9 @@ Read the relevant primary docs before changing behavior:
 - [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) - shipped system, target evolution, boundaries, dependencies, safety model, and testing strategy.
 - [`docs/PUBLISHING.md`](docs/PUBLISHING.md) - reproducible Firefox and Chrome packaging, review, and release process.
 - [`docs/PEER-REVIEW.md`](docs/PEER-REVIEW.md) - cross-lab critic findings and accepted dispositions. FIX-NOW and release-gate items are binding.
-- [`ROADMAP.md`](ROADMAP.md) - phase order and current implementation status.
+- [`docs/ROADMAP.md`](docs/ROADMAP.md) - phase order and current implementation status.
 
-The original market research remains under [`.docs/`](.docs/), but the `docs/` suite is the primary product and engineering reference.
+The original market research lives under [`docs/research/`](docs/research/), alongside the primary product and engineering references.
 
 ## Architecture - do not violate
 
@@ -36,7 +36,7 @@ The shipped Unzip flow is in `entrypoints/app/App.tsx`, `lib/core/worker.ts`, an
 - Every archive entry must pass `lib/core/safety.ts`. Enforce caps on actual aggregate emitted bytes, entry count, path depth, recursion depth, and wall time. Treat declared sizes as untrusted hints, parse Zip64-sized integers with `bigint`, and never recursively extract nested archives by default.
 - Prevent Zip-Slip after final filename decoding. Reject `..`, absolute paths, UNC paths, drive-letter paths, backslashes, NUL and control characters, symlinks, and special files. Resolve against the extraction root before accepting an entry.
 - RAR and 7z implementations carry restrictive or non-free license concerns. They remain Pro or later only and require a license and provenance review before use.
-- Keep `THIRD-PARTY.md` exact for every shipped dependency and WASM artifact: package, exact installed version, provenance where relevant, and SPDX license.
+- Keep `docs/THIRD-PARTY.md` exact for every shipped dependency and WASM artifact: package, exact installed version, provenance where relevant, and SPDX license.
 
 ### Privacy and capability contract
 
@@ -60,7 +60,7 @@ This is a written capability contract, not a claim that zero permissions proves 
 
 ### Dependencies and release gates
 
-- Replace the existing dependency ranges with exact versions, then keep all dependencies and development dependencies pinned. Do not use `latest`, caret, or tilde ranges. Keep `package-lock.json` committed and keep each shipped package's pinned installed version and SPDX license synchronized with `THIRD-PARTY.md`.
+- Replace the existing dependency ranges with exact versions, then keep all dependencies and development dependencies pinned. Do not use `latest`, caret, or tilde ranges. Keep `package-lock.json` committed and keep each shipped package's pinned installed version and SPDX license synchronized with `docs/THIRD-PARTY.md`.
 - The adversarial archive corpus is a release gate, not future cleanup. Commit fixtures for CRC corruption, local and central directory disagreement, unsupported methods, duplicate and case-colliding paths, oversized names, Unicode bidi spoofing, Windows reserved names, and truncated archives. Run them through `npm test`, and therefore `npm run check`; any crash, hang, uncaught exception, or safety-policy bypass blocks release.
 - Before release, declare supported OS rows and the minimum Chrome and Firefox version for every applicable row. No minimum-version matrix is currently declared, so do not invent or imply one. Every declared browser by OS cell must pass production-artifact integration tests covering worker load, cancellation, nested downloads, filenames, offline operation, and CSP enforcement, with results recorded in CI or the release checklist.
 
@@ -101,4 +101,4 @@ For HMR, run `npm run dev` or `npm run dev:firefox` and load the generated `.out
 
 ## Roadmap
 
-Follow [`ROADMAP.md`](ROADMAP.md) and build tools in phase order. Unzip under `lib/tools/unzip/` is the flagship seed, not a complete reusable architecture or permission model.
+Follow [`docs/ROADMAP.md`](docs/ROADMAP.md) and build tools in phase order. Unzip under `lib/tools/unzip/` is the flagship seed, not a complete reusable architecture or permission model.

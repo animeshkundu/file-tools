@@ -7,7 +7,7 @@ Controller correlation: `unit-id: b1c4c7d6-0736-4caa-ab31-573bae3f66d8`
 
 ## Scope
 
-Create one review-only artifact: `backlog/qa/audit-main.md`.
+Create one review-only artifact: `docs/backlog/qa/audit-main.md`.
 
 The implementation task owns only that file. It will not edit application source, tests,
 configuration, workflows, dependencies, product documentation, or future-phase implementation.
@@ -16,7 +16,7 @@ be named only as out of scope.
 
 ## Step-by-step implementation
 
-1. Create `backlog/qa/` if needed and add `audit-main.md` with the audit date, reviewed revision,
+1. Create `docs/backlog/qa/` if needed and add `audit-main.md` with the audit date, reviewed revision,
    north-star references, current-phase boundary, and correlation marker.
 2. Add a concise executive verdict that distinguishes verified strengths from release blockers:
    durable page/worker architecture, no network APIs found in app source, visual-theme alignment,
@@ -40,7 +40,7 @@ be named only as out of scope.
    an explicit blocker into the implementation handoff. Because the implementation is review-only,
    do not add artificial tests solely to exercise Markdown content, and do not claim source
    behavior changed.
-10. Scan `backlog/qa/audit-main.md` for secrets, inspect the final diff to confirm it is the only
+10. Scan `docs/backlog/qa/audit-main.md` for secrets, inspect the final diff to confirm it is the only
     implementation file changed, and commit with a Conventional Commit message whose trailer
     contains the exact correlation marker.
 
