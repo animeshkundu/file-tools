@@ -26,3 +26,6 @@ web-ext.config.ts
 *.sw?
 test-results/
 playwright-report/
+
+# Firefox E2E JSON report (HTML report + test-results already ignored above)
+e2e-results.json
