@@ -1,4 +1,4 @@
-import { UnzipInflate, strFromU8, strToU8, zipSync } from 'fflate';
+import { Inflate, deflateSync, strFromU8, strToU8, zipSync } from 'fflate';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { ArchiveSafetyError } from '../lib/core/safety';
 import { CancelledError, runUnzipWorker } from '../lib/core/worker';
@@ -13,6 +13,9 @@ import {
 } from '../lib/tools/unzip/types';
 
 const ROGUE_DECLARED_SIZE = 0x20000000;
+const MAX_ZIP_COMMENT_LENGTH = 0xffff;
+const CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD = 42;
+const EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD = 16;
 
 afterEach(() => {
   vi.useRealTimers();
@@ -87,13 +90,13 @@ function makeRogueLocalRecordArchive(): Uint8Array {
   archive.set(valid, rogue.byteLength);
   writeUint32(
     archive,
-    rogue.byteLength + central + 42,
-    rogue.byteLength + readUint32(valid, central + 42),
+    rogue.byteLength + central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD,
+    rogue.byteLength + readUint32(valid, central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD),
   );
   writeUint32(
     archive,
-    rogue.byteLength + eocd + 16,
-    rogue.byteLength + readUint32(valid, eocd + 16),
+    rogue.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    rogue.byteLength + readUint32(valid, eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD),
   );
   return archive;
 }
@@ -141,7 +144,424 @@ function makeZip64SentinelArchive(): Uint8Array {
   // Set EOCD entry count, CD size, and CD offset fields to the Zip64 sentinel values.
   writeUint16(archive, eocd + 10, 0xffff);
   writeUint32(archive, eocd + 12, 0xffffffff);
-  writeUint32(archive, eocd + 16, 0xffffffff);
+  writeUint32(archive, eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD, 0xffffffff);
+  return archive;
+}
+
+function makeDeflatedArchive(): Uint8Array {
+  return zipSync({ 'a.txt': strToU8('hello'.repeat(256)) }, { level: 6 });
+}
+
+function makeDataDescriptorDeflatedArchive(trailingBytes = new Uint8Array(0)): Uint8Array {
+  const name = 'a.txt';
+  const payload = strToU8('hello'.repeat(256));
+  const compressed = deflateSync(payload, { level: 6 });
+  const declaredCompressedSize = compressed.byteLength + trailingBytes.byteLength;
+  const nameBytes = strToU8(name);
+  const local = new Uint8Array(30 + nameBytes.byteLength + declaredCompressedSize + 16);
+  writeUint32(local, 0, 0x04034b50);
+  writeUint16(local, 4, 20);
+  writeUint16(local, 6, 0x0008);
+  writeUint16(local, 8, 8);
+  writeUint16(local, 26, nameBytes.byteLength);
+  local.set(nameBytes, 30);
+  local.set(compressed, 30 + nameBytes.byteLength);
+  local.set(trailingBytes, 30 + nameBytes.byteLength + compressed.byteLength);
+  const descriptorOffset = 30 + nameBytes.byteLength + declaredCompressedSize;
+  writeUint32(local, descriptorOffset, 0x08074b50);
+  writeUint32(local, descriptorOffset + 4, crc32(payload));
+  writeUint32(local, descriptorOffset + 8, declaredCompressedSize);
+  writeUint32(local, descriptorOffset + 12, payload.byteLength);
+
+  const central = new Uint8Array(46 + nameBytes.byteLength);
+  writeUint32(central, 0, 0x02014b50);
+  writeUint16(central, 4, 20);
+  writeUint16(central, 6, 20);
+  writeUint16(central, 8, 0x0008);
+  writeUint16(central, 10, 8);
+  writeUint32(central, 16, crc32(payload));
+  writeUint32(central, 20, declaredCompressedSize);
+  writeUint32(central, 24, payload.byteLength);
+  writeUint16(central, 28, nameBytes.byteLength);
+  central.set(nameBytes, 46);
+  const eocd = makeEndOfCentralDirectoryRecord({
+    centralDirectoryOffset: local.byteLength,
+    centralDirectorySize: central.byteLength,
+    entriesOnThisDisk: 1,
+  });
+  return concatBytes([local, central, eocd]);
+}
+
+function makeEarlyTerminatingGhostArchive(): Uint8Array {
+  const ghostName = strToU8('ghost.txt');
+  const ghost = new Uint8Array(30 + ghostName.byteLength);
+  writeUint32(ghost, 0, 0x04034b50);
+  writeUint16(ghost, 4, 20);
+  writeUint16(ghost, 26, ghostName.byteLength);
+  ghost.set(ghostName, 30);
+  return makeDataDescriptorDeflatedArchive(ghost);
+}
+
+function makeUnsupportedMethodArchive(): Uint8Array {
+  const archive = makeDeflatedArchive();
+  const local = findSignature(archive, 0x04034b50);
+  const central = findSignature(archive, 0x02014b50);
+  writeUint16(archive, local + 8, 12);
+  writeUint16(archive, central + 10, 12);
+  return archive;
+}
+
+function makeGhostLocalHeaderArchive(): Uint8Array {
+  // Prepend a local header that is never referenced by the central directory. A parser that
+  // trusts linear local-header discovery instead of the central directory can emit this ghost.
+  const valid = makeDeflatedArchive();
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  const name = strToU8('a.txt');
+  const payload = strToU8('ghost payload');
+  const rogue = new Uint8Array(30 + name.byteLength + payload.byteLength);
+  writeUint32(rogue, 0, 0x04034b50);
+  writeUint16(rogue, 4, 20);
+  writeUint16(rogue, 8, 0);
+  writeUint32(rogue, 14, crc32(payload));
+  writeUint32(rogue, 18, payload.byteLength);
+  writeUint32(rogue, 22, payload.byteLength);
+  writeUint16(rogue, 26, name.byteLength);
+  rogue.set(name, 30);
+  rogue.set(payload, 30 + name.byteLength);
+
+  const archive = new Uint8Array(rogue.byteLength + valid.byteLength);
+  archive.set(rogue);
+  archive.set(valid, rogue.byteLength);
+  writeUint32(
+    archive,
+    rogue.byteLength + central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD,
+    rogue.byteLength + readUint32(valid, central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD),
+  );
+  writeUint32(
+    archive,
+    rogue.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    rogue.byteLength + readUint32(valid, eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD),
+  );
+  return archive;
+}
+
+function makeTrailingGapGhostLocalHeaderArchive(): Uint8Array {
+  // Insert an orphan local header between the last real entry and the central directory. A parser
+  // that only checks central-referenced offsets in ascending order can still linear-scan this gap.
+  const valid = makeDeflatedArchive();
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  const name = strToU8('a.txt');
+  const payload = strToU8('ghost payload');
+  const rogue = new Uint8Array(30 + name.byteLength + payload.byteLength);
+  writeUint32(rogue, 0, 0x04034b50);
+  writeUint16(rogue, 4, 20);
+  writeUint16(rogue, 8, 0);
+  writeUint32(rogue, 14, crc32(payload));
+  writeUint32(rogue, 18, payload.byteLength);
+  writeUint32(rogue, 22, payload.byteLength);
+  writeUint16(rogue, 26, name.byteLength);
+  rogue.set(name, 30);
+  rogue.set(payload, 30 + name.byteLength);
+
+  const archive = new Uint8Array(valid.byteLength + rogue.byteLength);
+  archive.set(valid.subarray(0, central), 0);
+  archive.set(rogue, central);
+  archive.set(valid.subarray(central), central + rogue.byteLength);
+  writeUint32(
+    archive,
+    rogue.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    central + rogue.byteLength,
+  );
+  return archive;
+}
+
+function makeCentralDirectoryEocdGapArchive(): Uint8Array {
+  // Insert a byte between the central directory and EOCD so hidden content can sit outside the
+  // trusted central-directory span while still leaving a terminal EOCD for backward scanning.
+  const valid = makeDeflatedArchive();
+  const eocd = findSignature(valid, 0x06054b50);
+  const archive = new Uint8Array(valid.length + 1);
+  archive.set(valid.subarray(0, eocd), 0);
+  archive[eocd] = 0;
+  archive.set(valid.subarray(eocd), eocd + 1);
+  return archive;
+}
+
+function makeZip64LocatorBeforeTailArchive(): Uint8Array {
+  // Put the Zip64 locator immediately before an EOCD with a max-length comment so the streaming
+  // tail read starts at the EOCD and must explicitly read the 20 preceding bytes to see it.
+  const valid = makeDeflatedArchive();
+  const eocd = findSignature(valid, 0x06054b50);
+  const locator = new Uint8Array(20);
+  writeUint32(locator, 0, 0x07064b50);
+  writeUint16(valid, eocd + 20, MAX_ZIP_COMMENT_LENGTH);
+
+  const comment = new Uint8Array(MAX_ZIP_COMMENT_LENGTH);
+  const archive = new Uint8Array(valid.length + locator.length + comment.length);
+  archive.set(valid.subarray(0, eocd), 0);
+  archive.set(locator, eocd);
+  archive.set(valid.subarray(eocd), eocd + locator.length);
+  archive.set(comment, eocd + locator.length + valid.subarray(eocd).length);
+  return archive;
+}
+
+function makeSfxPreambleArchive(): Uint8Array {
+  const valid = makeDeflatedArchive();
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  // Prefix an MZ-style DOS executable stub without any local-file-header signature bytes.
+  const stub = Uint8Array.of(0x4d, 0x5a, 0x90, 0x00, 0x41, 0x42, 0x43, 0x44);
+  const archive = new Uint8Array(stub.byteLength + valid.byteLength);
+  archive.set(stub);
+  archive.set(valid, stub.byteLength);
+  writeUint32(
+    archive,
+    stub.byteLength + central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD,
+    stub.byteLength + readUint32(valid, central + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD),
+  );
+  // Shift the EOCD central-directory-start field forward to account for the SFX preamble bytes.
+  writeUint32(
+    archive,
+    stub.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    stub.byteLength + readUint32(valid, eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD),
+  );
+  return archive;
+}
+
+function makeInterEntryGapArchive(): Uint8Array {
+  const valid = zipSync({ 'a.txt': strToU8('a'), 'b.txt': strToU8('b') });
+  const firstLocal = findSignature(valid, 0x04034b50);
+  let secondLocal = firstLocal + 1;
+  while (
+    secondLocal <= valid.byteLength - 4 &&
+    readUint32(valid, secondLocal) !== 0x04034b50
+  ) {
+    secondLocal += 1;
+  }
+  if (secondLocal > valid.byteLength - 4) {
+    throw new Error('ZIP structure is missing its second local header.');
+  }
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  const gap = strToU8('benign inter-entry metadata');
+  const archive = new Uint8Array(valid.byteLength + gap.byteLength);
+  archive.set(valid.subarray(0, secondLocal), 0);
+  archive.set(gap, secondLocal);
+  archive.set(valid.subarray(secondLocal), secondLocal + gap.byteLength);
+
+  let centralOffset = central + gap.byteLength;
+  while (centralOffset < eocd + gap.byteLength) {
+    writeUint32(
+      archive,
+      centralOffset + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD,
+      readUint32(archive, centralOffset + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD) +
+        (readUint32(archive, centralOffset + CENTRAL_DIRECTORY_LOCAL_HEADER_OFFSET_FIELD) >= secondLocal
+          ? gap.byteLength
+          : 0),
+    );
+    centralOffset +=
+      46 +
+      readUint16(archive, centralOffset + 28) +
+      readUint16(archive, centralOffset + 30) +
+      readUint16(archive, centralOffset + 32);
+  }
+  writeUint32(
+    archive,
+    eocd + gap.byteLength + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    central + gap.byteLength,
+  );
+  return archive;
+}
+
+function makeArchiveExtraDataRecordArchive(): Uint8Array {
+  const valid = makeDeflatedArchive();
+  const central = findSignature(valid, 0x02014b50);
+  const eocd = findSignature(valid, 0x06054b50);
+  const payload = strToU8('meta');
+  const extraDataRecord = new Uint8Array(8 + payload.byteLength);
+  writeUint32(extraDataRecord, 0, 0x08064b50);
+  writeUint32(extraDataRecord, 4, payload.byteLength);
+  extraDataRecord.set(payload, 8);
+
+  const archive = new Uint8Array(valid.byteLength + extraDataRecord.byteLength);
+  archive.set(valid.subarray(0, central), 0);
+  archive.set(extraDataRecord, central);
+  archive.set(valid.subarray(central), central + extraDataRecord.byteLength);
+  // Shift the EOCD central-directory-start field forward to account for the inserted extra-data record.
+  writeUint32(
+    archive,
+    extraDataRecord.byteLength + eocd + EOCD_CENTRAL_DIRECTORY_OFFSET_FIELD,
+    central + extraDataRecord.byteLength,
+  );
+  return archive;
+}
+
+function concatBytes(parts: Uint8Array[]): Uint8Array {
+  const totalLength = parts.reduce((sum, part) => sum + part.byteLength, 0);
+  const bytes = new Uint8Array(totalLength);
+  let offset = 0;
+  for (const part of parts) {
+    bytes.set(part, offset);
+    offset += part.byteLength;
+  }
+  return bytes;
+}
+
+function makeStoredLocalFileRecord({
+  name,
+  data,
+  flags = 0,
+  localHeaderCompressedSize = data.byteLength,
+  localHeaderUncompressedSize = data.byteLength,
+  useDataDescriptor = false,
+}: {
+  name: string;
+  data: Uint8Array;
+  flags?: number;
+  localHeaderCompressedSize?: number;
+  localHeaderUncompressedSize?: number;
+  useDataDescriptor?: boolean;
+}): Uint8Array {
+  const nameBytes = strToU8(name);
+  const descriptorLength = useDataDescriptor ? 16 : 0;
+  const bytes = new Uint8Array(30 + nameBytes.byteLength + data.byteLength + descriptorLength);
+  const entryCrc32 = crc32(data);
+  writeUint32(bytes, 0, 0x04034b50);
+  writeUint16(bytes, 4, 20);
+  writeUint16(bytes, 6, flags);
+  writeUint16(bytes, 8, 0);
+  writeUint32(bytes, 14, entryCrc32);
+  writeUint32(bytes, 18, localHeaderCompressedSize);
+  writeUint32(bytes, 22, localHeaderUncompressedSize);
+  writeUint16(bytes, 26, nameBytes.byteLength);
+  bytes.set(nameBytes, 30);
+  bytes.set(data, 30 + nameBytes.byteLength);
+  if (useDataDescriptor) {
+    const descriptorOffset = 30 + nameBytes.byteLength + data.byteLength;
+    writeUint32(bytes, descriptorOffset, 0x08074b50);
+    writeUint32(bytes, descriptorOffset + 4, entryCrc32);
+    writeUint32(bytes, descriptorOffset + 8, data.byteLength);
+    writeUint32(bytes, descriptorOffset + 12, data.byteLength);
+  }
+  return bytes;
+}
+
+function makeCentralDirectoryRecord({
+  name,
+  data,
+  localHeaderOffset,
+  flags = 0,
+  centralHeaderCompressedSize = data.byteLength,
+  centralHeaderUncompressedSize = data.byteLength,
+}: {
+  name: string;
+  data: Uint8Array;
+  localHeaderOffset: number;
+  flags?: number;
+  centralHeaderCompressedSize?: number;
+  centralHeaderUncompressedSize?: number;
+}): Uint8Array {
+  const nameBytes = strToU8(name);
+  const bytes = new Uint8Array(46 + nameBytes.byteLength);
+  writeUint32(bytes, 0, 0x02014b50);
+  writeUint16(bytes, 4, 20);
+  writeUint16(bytes, 6, 20);
+  writeUint16(bytes, 8, flags);
+  writeUint16(bytes, 10, 0);
+  writeUint32(bytes, 16, crc32(data));
+  writeUint32(bytes, 20, centralHeaderCompressedSize);
+  writeUint32(bytes, 24, centralHeaderUncompressedSize);
+  writeUint16(bytes, 28, nameBytes.byteLength);
+  writeUint32(bytes, 42, localHeaderOffset);
+  bytes.set(nameBytes, 46);
+  return bytes;
+}
+
+function makeEndOfCentralDirectoryRecord({
+  centralDirectoryOffset,
+  centralDirectorySize,
+  entriesOnThisDisk,
+  totalEntries = entriesOnThisDisk,
+}: {
+  centralDirectoryOffset: number;
+  centralDirectorySize: number;
+  entriesOnThisDisk: number;
+  totalEntries?: number;
+}): Uint8Array {
+  const bytes = new Uint8Array(22);
+  writeUint32(bytes, 0, 0x06054b50);
+  writeUint16(bytes, 8, entriesOnThisDisk);
+  writeUint16(bytes, 10, totalEntries);
+  writeUint32(bytes, 12, centralDirectorySize);
+  writeUint32(bytes, 16, centralDirectoryOffset);
+  return bytes;
+}
+
+function makeDuplicateNameDataDescriptorLocalSentinelArchive(): Uint8Array {
+  const firstPayload = strToU8('rogue');
+  const secondPayload = strToU8('valid');
+  const firstRecord = makeStoredLocalFileRecord({
+    name: 'a.txt',
+    data: firstPayload,
+    flags: 0x0008,
+    localHeaderCompressedSize: 0xffffffff,
+    localHeaderUncompressedSize: 0xffffffff,
+    useDataDescriptor: true,
+  });
+  const secondRecordOffset = firstRecord.byteLength;
+  const secondRecord = makeStoredLocalFileRecord({ name: 'a.txt', data: secondPayload });
+  const centralDirectory = makeCentralDirectoryRecord({
+    name: 'a.txt',
+    data: secondPayload,
+    localHeaderOffset: secondRecordOffset,
+  });
+  const centralDirectoryOffset = firstRecord.byteLength + secondRecord.byteLength;
+  const eocd = makeEndOfCentralDirectoryRecord({
+    centralDirectoryOffset,
+    centralDirectorySize: centralDirectory.byteLength,
+    entriesOnThisDisk: 1,
+  });
+  return concatBytes([firstRecord, secondRecord, centralDirectory, eocd]);
+}
+
+function makeDataDescriptorLocalSentinelArchive(): Uint8Array {
+  const payload = strToU8('hello');
+  const record = makeStoredLocalFileRecord({
+    name: 'a.txt',
+    data: payload,
+    flags: 0x0008,
+    localHeaderCompressedSize: 0xffffffff,
+    localHeaderUncompressedSize: 0xffffffff,
+    useDataDescriptor: true,
+  });
+  const centralDirectory = makeCentralDirectoryRecord({
+    name: 'a.txt',
+    data: payload,
+    localHeaderOffset: 0,
+    flags: 0x0008,
+  });
+  const eocd = makeEndOfCentralDirectoryRecord({
+    centralDirectoryOffset: record.byteLength,
+    centralDirectorySize: centralDirectory.byteLength,
+    entriesOnThisDisk: 1,
+  });
+  return concatBytes([record, centralDirectory, eocd]);
+}
+
+function makeEocdDualCountSentinelArchive(): Uint8Array {
+  const archive = zipSync({ 'a.txt': strToU8('a') });
+  const eocd = findSignature(archive, 0x06054b50);
+  writeUint16(archive, eocd + 8, 0xffff);
+  writeUint16(archive, eocd + 10, 1);
+  return archive;
+}
+
+function makeMultiDiskArchive(): Uint8Array {
+  const archive = zipSync({ 'a.txt': strToU8('a') });
+  const eocd = findSignature(archive, 0x06054b50);
+  writeUint16(archive, eocd + 4, 1);
   return archive;
 }
 
@@ -166,6 +586,24 @@ function patchDeclaredUncompressedSizes(archive: Uint8Array, size: number): Uint
   }
 
   return patched;
+}
+
+function captureThrown(fn: () => void): unknown {
+  try {
+    fn();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Expected function to throw.');
+}
+
+async function captureRejected(promiseFactory: () => Promise<unknown>): Promise<unknown> {
+  try {
+    await promiseFactory();
+  } catch (error) {
+    return error;
+  }
+  throw new Error('Expected promise to reject.');
 }
 
 describe('extractZip', () => {
@@ -219,14 +657,14 @@ describe('extractZip', () => {
   it('terminates decompression when an emitted-byte guard trips mid-stream', () => {
     const archive = zipSync({ 'large.txt': strToU8('12345') });
     let returnedAfterFirstChunk = false;
-    vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
-      this: UnzipInflate,
+    vi.spyOn(Inflate.prototype, 'push').mockImplementation(function (
+      this: Inflate,
       _data,
       final,
     ) {
-      this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5), false);
+      this.ondata(Uint8Array.of(1, 2, 3, 4, 5), false);
       returnedAfterFirstChunk = true;
-      this.ondata(null, Uint8Array.of(6), final);
+      this.ondata(Uint8Array.of(6), final ?? false);
     });
 
     expect(() => extractZip(archive, { maxEmittedBytes: 4n })).toThrow(/extraction limit/u);
@@ -245,14 +683,14 @@ describe('extractZip', () => {
     );
 
     const createInflateSpyWithChunkTracking = (chunksProcessed: number[]) =>
-      vi.spyOn(UnzipInflate.prototype, 'push').mockImplementation(function (
-        this: UnzipInflate,
+      vi.spyOn(Inflate.prototype, 'push').mockImplementation(function (
+        this: Inflate,
         _data,
         final,
       ) {
-        this.ondata(null, Uint8Array.of(1, 2, 3, 4, 5, 6), false);
+        this.ondata(Uint8Array.of(1, 2, 3, 4, 5, 6), false);
         chunksProcessed.push(1);
-        this.ondata(null, Uint8Array.of(7, 8, 9, 10, 11, 12), final);
+        this.ondata(Uint8Array.of(7, 8, 9, 10, 11, 12), final ?? false);
         chunksProcessed.push(2);
       });
 
@@ -339,12 +777,14 @@ describe('extractZip', () => {
     );
     const onEntry = vi.fn();
 
-    expect(() => extractZip(archive, { maxEntryBytes: 1n })).toThrow(ArchiveSafetyError);
+    expect(extractZip(archive, { maxEntryBytes: 1n })).toEqual([
+      expect.objectContaining({ path: 'a.txt', size: 1 }),
+    ]);
     await expect(
       extractZipFile(fileFromBytes(archive, 'rogue.zip'), { onEntry }, { maxEntryBytes: 1n }),
-    ).rejects.toBeInstanceOf(ArchiveSafetyError);
+    ).resolves.toBe(1);
     expect(attemptedOversizedAllocation).toBe(false);
-    expect(onEntry).not.toHaveBeenCalled();
+    expect(onEntry).toHaveBeenCalledOnce();
   });
 
   it.each([
@@ -422,29 +862,207 @@ describe('Zip64 archive detection', () => {
   });
 });
 
-describe('extractZip invalid-size guard', () => {
-  it('rejects invalid sizes before bigint conversion', () => {
-    const archive = zipSync({ 'a.txt': strToU8('a') });
-    const originalValues = Map.prototype.values;
-    vi.spyOn(Map.prototype, 'values').mockImplementation(function (this: Map<string, unknown>) {
-      if (this.size === 1 && this.has('a.txt')) {
-        return [
-          {
-            name: 'a.txt',
-            kind: 'file',
-            hasDataDescriptor: false,
-            compression: 0,
-            crc32: 3904355907,
-            compressedSize: 1,
-            uncompressedSize: Number.NaN,
-            localHeaderOffset: 0,
-          },
-        ][Symbol.iterator]();
-      }
-      return originalValues.call(this);
+describe('archive parse hardening', () => {
+  async function expectFailClosedOnBothPaths(
+    archive: Uint8Array,
+    ErrorType: typeof ArchiveSafetyError | typeof ArchiveUnsupportedError,
+    message: RegExp,
+  ) {
+    const inflateSpy = vi.spyOn(Inflate.prototype, 'push');
+    const syncError = captureThrown(() => {
+      extractZip(archive);
     });
+    expect(syncError).toBeInstanceOf(ErrorType);
+    expect(syncError).toEqual(expect.objectContaining({ message: expect.stringMatching(message) }));
+    expect(inflateSpy).not.toHaveBeenCalled();
 
-    expect(() => extractZip(archive)).toThrow(/invalid size/u);
+    const onEntry = vi.fn();
+    const fileError = await captureRejected(() =>
+      extractZipFile(fileFromBytes(archive, 'adversarial.zip'), { onEntry }),
+    );
+    expect(fileError).toBeInstanceOf(ErrorType);
+    expect(fileError).toEqual(expect.objectContaining({ message: expect.stringMatching(message) }));
+    expect(onEntry).not.toHaveBeenCalled();
+    expect(inflateSpy).not.toHaveBeenCalled();
+  }
+
+  async function expectExtractsOnBothPaths(
+    archive: Uint8Array,
+    fileName: string,
+    expectedText = 'hello'.repeat(256),
+  ) {
+    const inflateSpy = vi.spyOn(Inflate.prototype, 'push');
+    const syncEntries = extractZip(archive);
+    expect(syncEntries).toHaveLength(1);
+    expect(syncEntries[0]?.path).toBe('a.txt');
+    expect(strFromU8(syncEntries[0]!.bytes)).toBe(expectedText);
+    expect(inflateSpy).toHaveBeenCalled();
+
+    inflateSpy.mockClear();
+    const streamedEntries: string[] = [];
+    await extractZipFile(fileFromBytes(archive, fileName), {
+      onEntry: (entry) => streamedEntries.push(`${entry.path}:${strFromU8(entry.bytes)}`),
+    });
+    expect(streamedEntries).toEqual([`a.txt:${expectedText}`]);
+    expect(inflateSpy).toHaveBeenCalled();
+  }
+
+  it('ignores unreferenced local-header-shaped bytes outside central entry ranges', async () => {
+    await expectExtractsOnBothPaths(makeGhostLocalHeaderArchive(), 'leading-gap.zip');
+    await expectExtractsOnBothPaths(makeTrailingGapGhostLocalHeaderArchive(), 'trailing-gap.zip');
+  });
+
+  it('rejects CASE 6 trailing ghost bytes after bounded inflation before emit on both paths', async () => {
+    const archive = makeEarlyTerminatingGhostArchive();
+    const syncError = captureThrown(() => extractZip(archive));
+    expect(syncError).toEqual(expect.objectContaining({ message: expect.stringMatching(/consume/u) }));
+
+    const onEntry = vi.fn();
+    const fileError = await captureRejected(() =>
+      extractZipFile(fileFromBytes(archive, 'case-6.zip'), { onEntry }),
+    );
+    expect(fileError).toEqual(expect.objectContaining({ message: expect.stringMatching(/consume/u) }));
+    expect(onEntry).not.toHaveBeenCalled();
+  });
+
+  it('locks fflate 0.8.3 consume-exactly state behavior', () => {
+    const exact = new Inflate(() => undefined) as unknown as {
+      push: (chunk: Uint8Array, final: boolean) => void;
+      p?: Uint8Array;
+      s?: { p?: number };
+    };
+    const compressed = deflateSync(strToU8('probe'));
+    exact.push(compressed, true);
+    expect(exact.p?.length ?? 0).toBe((exact.s?.p || 0) === 0 ? 0 : 1);
+
+    const trailing = new Inflate(() => undefined) as unknown as typeof exact;
+    trailing.push(concatBytes([compressed, new Uint8Array(50)]), true);
+    expect(trailing.p?.length ?? 0).not.toBe((trailing.s?.p || 0) === 0 ? 0 : 1);
+  });
+
+  it('accumulates trailing bytes across multiple pushes so multi-chunk consume-exactly holds', () => {
+    // A large entry is decoded via the file path by pushing the validated slice
+    // to Inflate in bounded chunks. If the deflate self-terminates in an early
+    // chunk, the trailing bytes in later chunks must remain counted as
+    // unconsumed (fflate must not silently drop post-final-block pushes), so the
+    // consume-exactly rule still rejects them.
+    const compressed = deflateSync(strToU8('a'));
+    const slice = concatBytes([compressed, new Uint8Array(1000)]);
+    const inflater = new Inflate(() => undefined) as unknown as {
+      push: (chunk: Uint8Array, final: boolean) => void;
+      p?: Uint8Array;
+      s?: { p?: number };
+    };
+    const chunkSize = 256;
+    for (let offset = 0; offset < slice.length; offset += chunkSize) {
+      const end = Math.min(offset + chunkSize, slice.length);
+      inflater.push(slice.subarray(offset, end), end === slice.length);
+    }
+    expect(inflater.p?.length ?? 0).toBeGreaterThan(1);
+    expect(inflater.p?.length ?? 0).not.toBe((inflater.s?.p || 0) === 0 ? 0 : 1);
+  });
+
+  it('fails closed when the fflate consumption state shape is unavailable', () => {
+    const original = Inflate.prototype.push;
+    const spy = vi.spyOn(Inflate.prototype, 'push').mockImplementation(function (
+      this: Inflate,
+      chunk: Uint8Array,
+      final?: boolean,
+    ) {
+      original.call(this, chunk, final);
+      // Simulate a future fflate whose internal consumption state is no longer
+      // the expected shape; the decoder must reject rather than skip the check.
+      (this as unknown as { s?: unknown }).s = undefined;
+    });
+    try {
+      expect(() => extractZip(makeDeflatedArchive())).toThrow(/consumption state is unavailable/u);
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
+  it('extracts a standard exact data-descriptor deflate stream on both paths', async () => {
+    await expectExtractsOnBothPaths(
+      makeDataDescriptorDeflatedArchive(),
+      'data-descriptor.zip',
+    );
+  });
+
+  it('rejects a central-directory/EOCD gap before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeCentralDirectoryEocdGapArchive(),
+      ArchiveSafetyError,
+      /abut the end-of-central-directory/u,
+    );
+  });
+
+  it('rejects a Zip64 locator just before the loaded tail window on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeZip64LocatorBeforeTailArchive(),
+      ArchiveUnsupportedError,
+      /zip64|too large/iu,
+    );
+  });
+
+  it('ignores an unreferenced data-descriptor local sentinel outside central entry ranges', async () => {
+    const archive = makeDuplicateNameDataDescriptorLocalSentinelArchive();
+    expect(strFromU8(extractZip(archive)[0]!.bytes)).toBe('valid');
+    const onEntry = vi.fn();
+    await extractZipFile(fileFromBytes(archive, 'unreferenced-local.zip'), { onEntry });
+    expect(strFromU8(onEntry.mock.calls[0]![0].bytes)).toBe('valid');
+  });
+
+  it('rejects an unsupported compression method before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeUnsupportedMethodArchive(),
+      ArchiveSafetyError,
+      /unsupported compression method/u,
+    );
+  });
+
+  it('rejects a data-descriptor local Zip64 sentinel before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeDataDescriptorLocalSentinelArchive(),
+      ArchiveUnsupportedError,
+      /zip64|too large/iu,
+    );
+  });
+
+  it('rejects an EOCD dual-count Zip64 sentinel before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeEocdDualCountSentinelArchive(),
+      ArchiveUnsupportedError,
+      /zip64|too large/iu,
+    );
+  });
+
+  it('rejects a multi-disk EOCD before inflation or emit on both paths', async () => {
+    await expectFailClosedOnBothPaths(
+      makeMultiDiskArchive(),
+      ArchiveSafetyError,
+      /multiple disks/u,
+    );
+  });
+
+  it('accepts an SFX-style stub preamble when the leading gap has no local-header signature', async () => {
+    await expectExtractsOnBothPaths(makeSfxPreambleArchive(), 'sfx-preamble.zip');
+  });
+
+  it('accepts a benign inter-entry gap on both paths', async () => {
+    const archive = makeInterEntryGapArchive();
+    expect(extractZip(archive).map((entry) => strFromU8(entry.bytes))).toEqual(['a', 'b']);
+    const streamed: string[] = [];
+    await extractZipFile(fileFromBytes(archive, 'inter-entry-gap.zip'), {
+      onEntry: (entry) => streamed.push(strFromU8(entry.bytes)),
+    });
+    expect(streamed).toEqual(['a', 'b']);
+  });
+
+  it('accepts an archive extra data record before the central directory when the trailing gap has no local-header signature', async () => {
+    await expectExtractsOnBothPaths(
+      makeArchiveExtraDataRecordArchive(),
+      'archive-extra-data-record.zip',
+    );
   });
 });
 
