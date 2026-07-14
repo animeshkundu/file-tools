@@ -2,7 +2,7 @@
   "name": "file-tools",
   "description": "Private offline ZIP extraction in your browser — nothing is uploaded.",
   "private": true,
-  "version": "0.1.2",
+  "version": "0.1.3",
   "license": "MIT",
   "author": "Animesh Kundu",
   "type": "module",
