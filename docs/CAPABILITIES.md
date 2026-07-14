@@ -44,8 +44,10 @@ This is enforced by architecture, not by a CSP alone:
 - All CPU-heavy work runs in a dedicated Web Worker spawned by the app page
   (`lib/core/worker.ts`). The worker has no access to the network outside of what the browser's
   own security model and the extension CSP allow.
-- There are no `fetch`, `XMLHttpRequest`, WebSocket, or import-from-remote calls anywhere in
-  the extension's source.
+- There are no `fetch`, `XMLHttpRequest`, `WebSocket`, `sendBeacon`, or import-from-remote calls
+  anywhere in the extension's source. CI greps the built bundle (`.output/**/*.js`) after each
+  build and fails if any of these appear, so the shipped artifact carries no network primitives
+  either.
 
 ### No host permissions
 
@@ -170,7 +172,10 @@ Host permissions and content scripts are not planned for any feature.
 2. **Read the background script.** Open `entrypoints/background.ts`. Confirm it only calls
    `browser.tabs.create` and contains no file access or network calls.
 3. **Read the worker entry.** Open `lib/core/worker.ts` and `lib/tools/unzip/unzip.worker.ts`.
-   Confirm there are no `fetch` or `XMLHttpRequest` calls.
+   Confirm there are no `fetch` or `XMLHttpRequest` calls. Then confirm the same for the built
+   output: after `npm run build` and `npm run build:firefox`, run
+   `grep -R -nE 'fetch\(|XMLHttpRequest|WebSocket|sendBeacon|EventSource' .output --include='*.js'`
+   and confirm it finds nothing. CI runs this scan on every change and fails if a match appears.
 4. **Review third-party dependencies.** Open `docs/THIRD-PARTY.md` for the full bill of materials.
    Inspect each package in `node_modules` or its source repository if you need higher assurance.
 5. **Run the test suite.** `npm run check` runs the compiler, linter, and Vitest suite
