@@ -105,6 +105,8 @@ jobs:
             .output/SHA256SUMS
             .output/*.sigstore.json
           fail_on_unmatched_files: true
+          # v0.1.x is a developer preview; mark it a prerelease.
+          prerelease: true
           body: |
             **Unzip**: private, offline ZIP extraction for Firefox and Chrome, entirely in your browser.
 

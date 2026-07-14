@@ -8,6 +8,10 @@ Please use GitHub's private security advisory form to [report a vulnerability](h
 
 Include the affected version, reproduction steps or a proof of concept, the expected and observed behavior, and the potential impact when possible. Please avoid including real user data.
 
+## Machine-readable policy
+
+A [`security.txt`](.well-known/security.txt) (RFC 9116) accompanies this policy. It is served on the project site at <https://animesh.kundus.in/file-tools/.well-known/security.txt> and points back to the private advisory form above.
+
 ## Scope
 
 Security reports may include:

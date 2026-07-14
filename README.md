@@ -4,7 +4,7 @@ Private, offline ZIP extraction for Firefox and Chrome, entirely in your browser
 
 ![Unzip showing an extracted ZIP file tree](docs/media/screenshots/unzip-ready.png)
 
-[![CI](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/ci.yml?branch=main&label=CI)](https://github.com/animeshkundu/file-tools/actions/workflows/ci.yml) [![Firefox E2E](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/e2e.yml?branch=main&label=Firefox%20E2E)](https://github.com/animeshkundu/file-tools/actions/workflows/e2e.yml) [![MIT License](https://img.shields.io/github/license/animeshkundu/file-tools?label=License)](LICENSE) [![Release](https://img.shields.io/github/v/release/animeshkundu/file-tools?label=Release&color=047857)](https://github.com/animeshkundu/file-tools/releases/latest)
+[![CI](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/ci.yml?branch=main&label=CI)](https://github.com/animeshkundu/file-tools/actions/workflows/ci.yml) [![Firefox E2E](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/e2e.yml?branch=main&label=Firefox%20E2E)](https://github.com/animeshkundu/file-tools/actions/workflows/e2e.yml) [![MIT License](https://img.shields.io/github/license/animeshkundu/file-tools?label=License)](LICENSE) [![Release](https://img.shields.io/github/v/release/animeshkundu/file-tools?include_prereleases&label=Release&color=047857)](https://github.com/animeshkundu/file-tools/releases)
 
 [Security policy](SECURITY.md) · [Changelog](docs/CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
@@ -76,8 +76,8 @@ Unzip is a developer preview. Signed store listings are on the way:
 
 Until then, run it from the latest [release](https://github.com/animeshkundu/file-tools/releases) build:
 
-- **Chrome:** unzip `file-tools-<version>-chrome.zip`, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder.
-- **Firefox:** unzip `file-tools-<version>-firefox.zip`, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `manifest.json` from the extracted folder. A temporary add-on is cleared when Firefox restarts; a signed AMO build for persistent installation is coming soon.
+- **Chrome:** unzip `unzip-<version>-chrome.zip`, open `chrome://extensions`, enable **Developer mode**, choose **Load unpacked**, and select the extracted folder.
+- **Firefox:** unzip `unzip-<version>-firefox.zip`, open `about:debugging#/runtime/this-firefox`, choose **Load Temporary Add-on**, and select `manifest.json` from the extracted folder. A temporary add-on is cleared when Firefox restarts; a signed AMO build for persistent installation is coming soon.
 
 ## Verify your download
 
