@@ -6,6 +6,23 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-07-14
+
+No functional changes to extraction. Supply-chain, discoverability, and accessibility hardening.
+
+### Changed
+
+- Pinned every GitHub Actions workflow dependency to a full commit SHA (with a version comment), verified against upstream.
+
+### Added
+
+- `robots.txt`, `sitemap.xml`, and a `SoftwareApplication` JSON-LD block for the site; a captions track and a visible text description for the demo video.
+
+### Fixed
+
+- Raised the feature-card number badge contrast to meet WCAG 1.4.3.
+- Corrected the release-publishing description in the docs (the AMO and Chrome Web Store submits are optional and skipped by default) and removed em dashes from the documentation.
+
 ## [0.1.3] - 2026-07-14
 
 No functional changes to extraction. Defect fixes and release hygiene.
@@ -62,7 +79,8 @@ Initial release. Private, offline ZIP extraction that runs entirely in the brows
 
 - Zero install-time permissions and a strict no-egress extension-page Content Security Policy (`connect-src 'none'`, `form-action 'none'`, `object-src 'none'`, `base-uri 'none'`), both checked in CI against the built manifest.
 
-[Unreleased]: https://github.com/animeshkundu/file-tools/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/animeshkundu/file-tools/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/animeshkundu/file-tools/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/animeshkundu/file-tools/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/animeshkundu/file-tools/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/animeshkundu/file-tools/compare/v0.1.0...v0.1.1
