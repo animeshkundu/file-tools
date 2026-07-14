@@ -46,9 +46,11 @@ jobs:
           sha256sum -- "${zip_files[@]}" > SHA256SUMS
 
       - name: Install Cosign
-        uses: sigstore/cosign-installer@v3
+        # v3 of the installer cannot verify a Cosign v3 binary (it fetches a
+        # detached .sig that Cosign v3 no longer publishes); v4 supports it.
+        uses: sigstore/cosign-installer@v4.1.2
         with:
-          cosign-release: 'v3.1.1'
+          cosign-release: 'v3.0.6'
 
       - name: Sign release assets with GitHub OIDC
         shell: bash
