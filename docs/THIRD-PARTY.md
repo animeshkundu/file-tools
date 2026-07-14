@@ -1,6 +1,6 @@
 # Third-party software
 
-Exact shipped runtime dependency BOM for version 0.1.0. Versions are pinned in `package.json` and `package-lock.json`.
+Exact shipped runtime dependency BOM. Versions are pinned in `package.json` and `package-lock.json`.
 
 ## How to refresh
 

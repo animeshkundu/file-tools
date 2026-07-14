@@ -47,14 +47,26 @@ jobs:
 
       - name: Install Cosign
         uses: sigstore/cosign-installer@v3
+        with:
+          cosign-release: 'v3.1.1'
 
       - name: Sign release assets with GitHub OIDC
         shell: bash
         run: |
           set -euo pipefail
           for file in .output/*.zip .output/SHA256SUMS; do
-            cosign sign-blob --yes --bundle "${file}.cosign.bundle" "${file}"
+            cosign sign-blob --yes --bundle "${file}.sigstore.json" "${file}"
           done
+
+      - name: Verify the signed checksums (self-check with the documented command)
+        shell: bash
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --bundle .output/SHA256SUMS.sigstore.json \
+            --certificate-identity-regexp '^https://github\.com/animeshkundu/file-tools/\.github/workflows/release\.yml@refs/tags/v[^/]+$' \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            .output/SHA256SUMS
 
       # Optional. Set the repository variable PUBLISH_FIREFOX to true and add
       # FIREFOX_EXTENSION_ID, FIREFOX_JWT_ISSUER, and FIREFOX_JWT_SECRET as
@@ -89,7 +101,7 @@ jobs:
           files: |
             .output/*.zip
             .output/SHA256SUMS
-            .output/*.cosign.bundle
+            .output/*.sigstore.json
           fail_on_unmatched_files: true
           body: |
             **Unzip**: private, offline ZIP extraction for Firefox and Chrome, entirely in your browser.
@@ -131,7 +143,7 @@ jobs:
             Each asset also has a keyless GitHub OIDC signature bundle. Verify the checksum file before trusting it:
 
             ```sh
-            cosign verify-blob --bundle SHA256SUMS.cosign.bundle --certificate-identity-regexp '^https://github\.com/animeshkundu/file-tools/\.github/workflows/release\.yml@refs/tags/v[^/]+$' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+            cosign verify-blob --bundle SHA256SUMS.sigstore.json --certificate-identity-regexp '^https://github\.com/animeshkundu/file-tools/\.github/workflows/release\.yml@refs/tags/v[^/]+$' --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
             ```
 
             For an independent build comparison, check out this tag, run `npm ci`, then `npm run zip` and `npm run zip:firefox`. Compare the generated ZIP SHA-256 values with `SHA256SUMS`, or compare the build inputs with the attached sources ZIP. Byte-for-byte equality can depend on the local toolchain and packaging metadata.
