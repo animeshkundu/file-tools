@@ -6,6 +6,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-07-14
+
+No functional changes to extraction. Packaging, release-integrity, site, and documentation improvements.
+
+### Changed
+
+- The Chrome build no longer carries the Firefox-only `browser_specific_settings.gecko` key.
+- Release archives are named `unzip-<version>-<browser>.zip`.
+- Release signatures now use the modern Sigstore bundle format (`SHA256SUMS.sigstore.json`), verified in CI immediately after signing.
+
+### Added
+
+- Open Graph and Twitter Card metadata, a preview image, an SVG favicon, canonical URLs, and a theme color on the site.
+- A populated changelog, a release-version badge, front-page links to the security policy and contributing guide, and inline definitions of security terms in the README.
+
 ## [0.1.1] - 2026-07-14
 
 ### Changed
@@ -33,6 +48,7 @@ Initial release. Private, offline ZIP extraction that runs entirely in the brows
 
 - Zero install-time permissions and a strict no-egress extension-page Content Security Policy (`connect-src 'none'`, `form-action 'none'`, `object-src 'none'`, `base-uri 'none'`), both checked in CI against the built manifest.
 
-[Unreleased]: https://github.com/animeshkundu/file-tools/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/animeshkundu/file-tools/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/animeshkundu/file-tools/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/animeshkundu/file-tools/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/animeshkundu/file-tools/releases/tag/v0.1.0
