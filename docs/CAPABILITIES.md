@@ -12,7 +12,7 @@ here must be true on the current `main` branch at the time of reading. Controls 
 ## Canonical capability statement
 
 > Local processing, no upload; zero install-time permissions for the core; optional `downloads`
-> permission requested only at the moment the user invokes tree-preserving multi-file save —
+> permission requested only at the moment the user invokes tree-preserving multi-file save,
 > never at install.
 
 This is a written contract, not a mechanical proof. The sections below say exactly what is and
@@ -28,12 +28,12 @@ The shipped manifest declares `"permissions": []`. No permission is bundled into
 at install time. The user is never shown a permission prompt when installing the extension.
 
 Verifiable in 10 seconds: open `wxt.config.ts`, find `permissions: []`. Build the extension
-(`npm run build`) and open `.output/chrome-mv3/manifest.json` — there is no `permissions` key
+(`npm run build`) and open `.output/chrome-mv3/manifest.json`; there is no `permissions` key
 or it is an empty array.
 
 ### Local-only processing
 
-All file work — ZIP parsing, decompression, safety checking, archive assembly — runs on the
+All file work (ZIP parsing, decompression, safety checking, archive assembly) runs on the
 user's device. No file bytes, metadata, filenames, or results are transmitted to any server.
 
 This is enforced by architecture, not by a CSP alone:
@@ -90,7 +90,7 @@ script-src 'self' 'wasm-unsafe-eval'; object-src 'self'
 ```
 
 `'wasm-unsafe-eval'` is present for future bundled WASM (e.g. `hash-wasm`). No WASM binary is
-currently used by any shipped tool. The directive is scoped to `'self'` — only resources
+currently used by any shipped tool. The directive is scoped to `'self'`; only resources
 bundled with the extension, never loaded from a remote URL.
 
 ### No telemetry, no account, no ads
@@ -141,7 +141,7 @@ individual files or use the "Download all as ZIP" path will never be prompted fo
 
 The manifest is and will remain at zero install-time permissions for the ZIP-in/ZIP-out core.
 Future capabilities under consideration (`"storage"` for user settings, `"sidePanel"` for
-Chrome quick-access) would follow the same lazy-request pattern — requested only when the
+Chrome quick-access) would follow the same lazy-request pattern, requested only when the
 feature is invoked, never bundled in at install time.
 
 Host permissions and content scripts are not planned for any feature.
