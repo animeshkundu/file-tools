@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 
 ## [Unreleased]
 
+## [0.1.3] - 2026-07-14
+
+No functional changes to extraction. Defect fixes and release hygiene.
+
+### Changed
+
+- The built extension bundle no longer contains Vite's module-preload `fetch()` shim. A CI check greps the built bundle (`.output/**/*.js`) after each build and fails if any `fetch`, `XMLHttpRequest`, `WebSocket`, `sendBeacon`, or `EventSource` appears.
+- Marked the developer-preview GitHub Release as a prerelease.
+
+### Fixed
+
+- Corrected the README install instructions, which named the old `file-tools-<version>-*.zip` assets instead of the shipped `unzip-<version>-*.zip` assets.
+- The published `security.txt` is now served on the project site; the Pages artifact previously excluded the `.well-known/` directory.
+
 ## [0.1.2] - 2026-07-14
 
 No functional changes to extraction. Packaging, release-integrity, site, and documentation improvements.
@@ -48,7 +62,8 @@ Initial release. Private, offline ZIP extraction that runs entirely in the brows
 
 - Zero install-time permissions and a strict no-egress extension-page Content Security Policy (`connect-src 'none'`, `form-action 'none'`, `object-src 'none'`, `base-uri 'none'`), both checked in CI against the built manifest.
 
-[Unreleased]: https://github.com/animeshkundu/file-tools/compare/v0.1.2...HEAD
+[Unreleased]: https://github.com/animeshkundu/file-tools/compare/v0.1.3...HEAD
+[0.1.3]: https://github.com/animeshkundu/file-tools/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/animeshkundu/file-tools/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/animeshkundu/file-tools/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/animeshkundu/file-tools/releases/tag/v0.1.0
