@@ -26,6 +26,24 @@
   <meta name="twitter:description" content="Private, offline ZIP extraction for Firefox and Chrome, entirely in your browser." />
   <meta name="twitter:image" content="https://animesh.kundus.in/file-tools/media/og-card.png" />
   <meta name="twitter:image:alt" content="The Unzip extension showing an extracted ZIP file tree." />
+
+  <script type="application/ld+json">
+    {
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "Unzip",
+      "description": "Private, offline ZIP extraction for Firefox and Chrome, entirely in your browser.",
+      "applicationCategory": "UtilitiesApplication",
+      "operatingSystem": "Google Chrome, Mozilla Firefox",
+      "url": "https://animesh.kundus.in/file-tools/",
+      "downloadUrl": "https://github.com/animeshkundu/file-tools/releases",
+      "screenshot": "https://animesh.kundus.in/file-tools/media/og-card.png",
+      "license": "https://github.com/animeshkundu/file-tools/blob/main/LICENSE",
+      "isAccessibleForFree": true,
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" },
+      "author": { "@type": "Person", "name": "Animesh Kundu" }
+    }
+  </script>
 </head>
 <body class="landing-page">
   <a class="skip-link" href="#main-content">Skip to main content</a>
@@ -227,9 +245,14 @@
         <video controls playsinline preload="metadata" poster="/file-tools/media/unzip-idle.png">
           <source src="/file-tools/media/unzip-demo.mp4" type="video/mp4" />
           <source src="/file-tools/media/unzip-demo.webm" type="video/webm" />
+          <track kind="captions" srclang="en" label="English" src="/file-tools/media/unzip-demo.vtt" default />
           Your browser does not support embedded video. You can <a href="/file-tools/media/unzip-demo.mp4">download the MP4 demo</a> or <a href="/file-tools/media/unzip-demo.webm">download the WebM alternate</a> instead.
         </video>
       </div>
+      <details class="video-transcript">
+        <summary>Text description of the demo</summary>
+        <p>The recording shows Unzip's start screen with a drop zone to open a ZIP archive. An archive is opened and its contents list in a sortable, filterable file tree. Files download individually or all at once, with all processing staying on the device.</p>
+      </details>
     </section>
 
     <section class="section install-section" id="install" aria-labelledby="install-title">
