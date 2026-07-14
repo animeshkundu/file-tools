@@ -4,7 +4,9 @@ Private, offline ZIP extraction for Firefox and Chrome, entirely in your browser
 
 ![Unzip showing an extracted ZIP file tree](docs/media/screenshots/unzip-ready.png)
 
-[![CI](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/ci.yml?branch=main&label=CI)](https://github.com/animeshkundu/file-tools/actions/workflows/ci.yml) [![Firefox E2E](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/e2e.yml?branch=main&label=Firefox%20E2E)](https://github.com/animeshkundu/file-tools/actions/workflows/e2e.yml) [![MIT License](https://img.shields.io/github/license/animeshkundu/file-tools?label=License)](LICENSE)
+[![CI](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/ci.yml?branch=main&label=CI)](https://github.com/animeshkundu/file-tools/actions/workflows/ci.yml) [![Firefox E2E](https://img.shields.io/github/actions/workflow/status/animeshkundu/file-tools/e2e.yml?branch=main&label=Firefox%20E2E)](https://github.com/animeshkundu/file-tools/actions/workflows/e2e.yml) [![MIT License](https://img.shields.io/github/license/animeshkundu/file-tools?label=License)](LICENSE) [![Release](https://img.shields.io/github/v/release/animeshkundu/file-tools?label=Release&color=047857)](https://github.com/animeshkundu/file-tools/releases/latest)
+
+[Security policy](SECURITY.md) · [Changelog](docs/CHANGELOG.md) · [Contributing](CONTRIBUTING.md)
 
 ## The privacy promise
 
@@ -33,8 +35,8 @@ default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: bl
 ## Features
 
 - **Streaming, bounded-memory extraction** with per-entry and aggregate caps.
-- **Defensive ZIP parsing** driven by the central directory and designed to fail closed. Encrypted, Zip64 and larger-than-4 GB, corrupt, crafted, and ghost archives are rejected with friendly messages.
-- **Full path safety** against zip-slip, absolute, UNC, and drive paths; Windows reserved names; bidi and Unicode spoofing; and case-colliding names.
+- **Defensive ZIP parsing** driven by the central directory and designed to fail closed, meaning anything it cannot safely and unambiguously handle is rejected rather than guessed at. Encrypted, Zip64 and larger-than-4 GB, corrupt, crafted, and ghost archives (archives with entries hidden from the index that a naive parser would still extract) are rejected with friendly messages.
+- **Full path safety** against zip-slip, absolute, UNC, and drive paths; Windows reserved names; bidirectional-text (bidi) and Unicode spoofing (filenames crafted with invisible or look-alike characters so a dangerous name appears safe); and case-colliding names.
 - **Fast navigation at scale** with a virtualized, sortable, filterable file tree for large archives and high entry counts.
 - **Flexible downloads** for one file or the full tree, preserving structure and generating collision-safe names.
 - **Safe interruption** with cancellation and a drop-outside guard that prevents accidental data loss.
