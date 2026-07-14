@@ -7,7 +7,7 @@ product and market rationale live in [`research/ext-1-file-tools.md`](research/e
 (§7 in particular is the source for the cross-browser build strategy summarized below).
 
 Scope note: this doc describes the repo as it exists today (a single WXT application, version
-0.1.0, one shipped tool, Unzip). Every "target" or "planned" item below is explicitly labeled as
+0.1.1, one shipped tool, Unzip). Every "target" or "planned" item below is explicitly labeled as
 such. Nothing in the "target" sections is implemented yet.
 
 ## 1. Overview

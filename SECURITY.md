@@ -24,7 +24,7 @@ The following are generally out of scope:
 
 ## Supported versions
 
-The latest release is supported: v0.1.0 and the current `main` branch. Older versions may not receive fixes.
+The latest release and the current `main` branch are supported. Older versions may not receive fixes.
 
 ## What to expect
 
