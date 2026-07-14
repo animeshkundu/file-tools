@@ -4,7 +4,7 @@ File Tools is prepared for a listed Firefox Add-ons submission and an optional C
 
 ## Release overview
 
-A tag matching `v*` starts `.github/workflows/release.yml`. The workflow installs from the committed `package-lock.json` on Node 22, runs the compile, lint, and test checks, packages both browser builds, submits Firefox to AMO, optionally submits Chrome, and attaches every ZIP under `.output/` to a GitHub Release.
+A tag matching `v*` starts `.github/workflows/release.yml`. The workflow installs from the committed `package-lock.json` on Node 22, runs the compile, lint, and test checks, packages both browser builds, signs the assets with keyless cosign, and attaches every ZIP under `.output/` plus its checksums and signatures to a prerelease GitHub Release. Submitting to Firefox AMO and the Chrome Web Store is optional and skipped by default; each runs only when its repository variable (`PUBLISH_FIREFOX` / `PUBLISH_CHROME`) and the matching secrets are configured.
 
 Use matching semantic versions in `package.json` and Git tags:
 

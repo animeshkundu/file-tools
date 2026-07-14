@@ -17,7 +17,7 @@ After changing dependencies, run `npm install`, then update the runtime package 
 
 No runtime package in the current build ships a WASM binary.
 
-## E2E test tools (devDependencies — not bundled into the shipped extension)
+## E2E test tools (devDependencies, not bundled into the shipped extension)
 
 | Package                     | Version | SPDX license | Purpose                                             |
 | --------------------------- | ------: | ------------ | --------------------------------------------------- |
