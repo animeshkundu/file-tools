@@ -19,7 +19,7 @@ Run the closest available command before handing off. If a command is ambiguous,
 - Install: `npm ci`
 - Dev: `npm run dev`
 - Build: `npm run build`
-- Typecheck: <!-- TODO: confirm typecheck command. -->
+- Typecheck: `npm run compile`
 - Lint: `npm run lint`
 - Test: `npm run test`
 
@@ -28,7 +28,7 @@ Run the closest available command before handing off. If a command is ambiguous,
 A change is not ready for review or merge until all applicable checks below are satisfied with real command output in the PR:
 
 - Build passes: `npm run build`
-- Typecheck passes: <!-- TODO: record the typecheck command. -->
+- Typecheck passes: `npm run compile`
 - Lint passes: `npm run lint`
 - Tests pass: `npm run test`
 - Tests only go up: features and bug fixes add or strengthen tests; do not delete coverage to make a branch green.
@@ -41,7 +41,7 @@ A change is not ready for review or merge until all applicable checks below are 
 
 ## Primary OS and portability
 
-Primary OS: <!-- TODO: choose the primary supported OS. -->
+Primary OS: cross-platform. This is a browser extension with no OS-specific application code; it runs in Chrome and Firefox on any desktop OS, and CI validates on `ubuntu-latest`.
 
 - Treat the primary OS as authoritative when behavior differs.
 - Keep path handling portable; avoid shell-specific assumptions in application code.
@@ -57,9 +57,9 @@ Primary OS: <!-- TODO: choose the primary supported OS. -->
 
 ## Project structure
 
-- `tests/` — <!-- TODO: describe ownership and generated-file rules. -->
-- `docs/` — <!-- TODO: describe ownership and generated-file rules. -->
-- `.github/` — <!-- TODO: describe ownership and generated-file rules. -->
+- `tests/` — Vitest unit tests plus the real-Firefox end-to-end suite under `tests/e2e/` (specs, `capture.mjs`, fixtures, and the anti-false-green guard). Hand-authored; no generated files are committed here.
+- `docs/` — Product, engineering, and process docs, including `docs/adr/`, `docs/plans/`, `docs/research/`, `docs/history/`, and generated capture media under `docs/media/`. Author docs by hand; `docs/media/` is produced by `npm run capture`.
+- `.github/` — GitHub Actions workflows (CI, E2E, Pages, Release) and the pull-request template. Hand-authored; no generated files.
 
 ## Decision records and durable memory
 
@@ -90,4 +90,4 @@ Every handoff should include:
 
 ## Gotchas
 
-- Primary OS was not confidently detected; choose one before relying on OS-specific behavior.
+- Extraction is central-directory-driven and fails closed: prevalidate every entry against the central directory, then inflate only each entry's central-validated byte slice. Never push a whole archive to a streaming unzip. See `lib/tools/unzip/extract.ts` and `lib/core/safety.ts`.
