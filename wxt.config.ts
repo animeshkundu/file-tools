@@ -31,5 +31,10 @@ export default defineConfig({
         }
       : {}),
   }),
-  vite: () => ({ plugins: [tailwindcss()] }),
+  vite: () => ({
+    plugins: [tailwindcss()],
+    // Disable Vite's module-preload polyfill so the built bundle contains no
+    // fetch() shim. Modern Chrome and Firefox support modulepreload natively.
+    build: { modulePreload: { polyfill: false } },
+  }),
 });
