@@ -67,7 +67,7 @@ Unsafe, unsupported, or damaged archives fail closed with a clear message.
 
 ## Install
 
-Unzip v0.1.0 is a developer preview. Signed store listings are on the way:
+Unzip is a developer preview. Signed store listings are on the way:
 
 - **Firefox (AMO):** coming soon
 - **Chrome (Chrome Web Store):** coming soon
