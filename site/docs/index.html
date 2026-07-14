@@ -112,9 +112,14 @@
 
             <p>
               All ZIP parsing and extraction runs in a Web Worker inside the extension's sandboxed
-              page. The archive bytes never leave your device. The extension page's Content Security
-              Policy denies all external connections (<code>connect-src 'none'</code>), preventing
-              network egress at the browser level even if a bug were introduced in the code.
+              page. The archive bytes never leave your device. This holds first because the extension
+              declares zero permissions and its source makes no network calls (no <code>fetch</code>,
+              <code>XMLHttpRequest</code>, <code>WebSocket</code>, or telemetry). The extension page's
+              Content Security Policy (<code>connect-src 'none'</code>) is defense in depth, blocking
+              network connections from the page even if a bug were introduced. A Content Security
+              Policy does not restrict top-level navigation, so it is not relied on alone; source
+              review confirms the extension opens no external pages (the only tab it opens is its own
+              bundled app page).
             </p>
 
             <p>

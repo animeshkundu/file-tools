@@ -10,7 +10,7 @@ Private, offline ZIP extraction for Firefox and Chrome, entirely in your browser
 
 > **Your files never leave your device; no uploads, no accounts, no telemetry; all processing local.**
 
-A strict no-egress content-security policy plus zero install-time permissions constrain network access; the empty permissions and no-egress content-security policy are checked in CI against the built manifest. See [docs/PEER-REVIEW.md](docs/PEER-REVIEW.md) and [docs/TEARDOWN.md](docs/TEARDOWN.md).
+This rests first on what you can audit: the extension declares zero permissions, and its source contains no network code (no `fetch`, `XMLHttpRequest`, `WebSocket`, or telemetry, and the only tab it opens is its own bundled page). A strict no-egress content-security policy (`connect-src 'none'`) is defense in depth, blocking network connections from the extension page even if a bug were introduced; because a content-security policy does not restrict top-level navigation, it is not the sole line of defense, and source review confirms the extension navigates nowhere external. The empty permission list and the CSP are both checked in CI against the built manifest. See [docs/PEER-REVIEW.md](docs/PEER-REVIEW.md) and [docs/CAPABILITIES.md](docs/CAPABILITIES.md).
 
 ## Permissions and CSP
 
@@ -28,7 +28,7 @@ Extension-page content-security policy:
 default-src 'none'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'
 ```
 
-`connect-src 'none'` blocks network connections from the extension page, `form-action 'none'` blocks form submissions, and `object-src`, `base-uri`, and `default-src` are locked to `'none'`. Saving a file uses a standard browser download from an in-page blob, so no `downloads` permission is requested. An empty permission list is not a privacy proof by itself, so the capability contract is verified through source review, the built manifests, and production-artifact tests. See [docs/PEER-REVIEW.md](docs/PEER-REVIEW.md) and [docs/TEARDOWN.md](docs/TEARDOWN.md).
+`connect-src 'none'` blocks network connections from the extension page, `form-action 'none'` blocks form submissions, and `object-src`, `base-uri`, and `default-src` are locked to `'none'`. Saving a file uses a standard browser download from an in-page blob, so no `downloads` permission is requested. An empty permission list and a CSP are not a privacy proof by themselves, so the capability contract is verified through source review (which confirms no network calls and no navigation to external pages), the built manifests, and production-artifact tests. See [docs/PEER-REVIEW.md](docs/PEER-REVIEW.md) and [docs/CAPABILITIES.md](docs/CAPABILITIES.md).
 
 ## Features
 
