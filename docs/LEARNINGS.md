@@ -29,6 +29,12 @@ Record durable project learnings here so future work can avoid rediscovering the
 - What happened: published release ZIPs are built at tag time, so a rebrand merged to `main` leaves the previously published assets carrying the old manifest.
 - What to do next time: to ship a manifest change, cut a new patch release (bump `package.json`, tag at the updated head); the release workflow rebuilds the assets. Never move or replace a prior tag's assets — that breaks provenance and signatures.
 
+### 2026-07-22 — Local blob resources need explicit E2E no-egress handling
+
+- Context: inline image previews load a short-lived `blob:moz-extension://...` URL under the existing `img-src blob:` CSP.
+- What happened: Resource Timing records that local blob URL as an image resource, but its name does not start directly with the extension origin. A no-egress assertion that only allows `moz-extension://...` would report the local preview as external traffic.
+- What to do next time: keep production no-egress checks fail-closed, but distinguish `blob:` and `data:` resources rooted in the extension from HTTP(S) or other external URLs. Never broadly ignore all Resource Timing entries. See `tests/e2e/unzip.e2e.ts` and `wxt.config.ts`.
+
 ## Adding a learning
 
 Append a dated entry under `## Entries` in the form `### YYYY-MM-DD — Short title`, then `Context` / `What happened` / `What to do next time` / related file or link references.

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { downloadZip } from 'client-zip';
 import { Button } from '../../components/Button';
+import { FilePreview } from '../../components/FilePreview';
 import { FileTree } from '../../components/FileTree';
 import { Progress } from '../../components/Progress';
 import { Dropzone } from '../../lib/core/dropzone';
@@ -21,11 +22,13 @@ export default function App() {
   const [typeHint, setTypeHint] = useState('');
   const [isDownloading, setIsDownloading] = useState(false);
   const [isCancelling, setIsCancelling] = useState(false);
+  const [selectedEntry, setSelectedEntry] = useState<ExtractedEntry | null>(null);
   const controllerRef = useRef<WorkerController | null>(null);
   const operationRef = useRef(0);
   const isDownloadingRef = useRef(false);
   const collectedEntriesRef = useRef<ExtractedEntry[]>([]);
   const objectUrlsRef = useRef(new Set<string>());
+  const previewTriggerRef = useRef<HTMLButtonElement | null>(null);
   const dropzoneRef = useRef<HTMLDivElement>(null);
   const previousStatusRef = useRef<Status | null>(null);
   const extractingHeadingRef = useRef<HTMLHeadingElement>(null);
@@ -80,6 +83,8 @@ export default function App() {
     collectedEntriesRef.current = [];
     setArchiveName(file.name);
     setEntries([]);
+    setSelectedEntry(null);
+    previewTriggerRef.current = null;
     setProgress(0);
     setError('');
     setStatus('extracting');
@@ -108,6 +113,8 @@ export default function App() {
       setIsCancelling(false);
       collectedEntriesRef.current = [];
       setEntries([]);
+      setSelectedEntry(null);
+      previewTriggerRef.current = null;
       setProgress(0);
       setError(reason instanceof Error ? reason.message : 'Could not extract this archive.');
       setStatus('error');
@@ -157,10 +164,29 @@ export default function App() {
     setIsCancelling(false);
     setStatus('idle');
     setEntries([]);
+    setSelectedEntry(null);
+    previewTriggerRef.current = null;
     setProgress(0);
     setArchiveName('');
     setError('');
     setTypeHint('');
+  }
+
+  function selectEntry(entry: ExtractedEntry, trigger: HTMLButtonElement) {
+    previewTriggerRef.current = trigger;
+    setSelectedEntry(entry);
+  }
+
+  function closePreview() {
+    const trigger = previewTriggerRef.current;
+    setSelectedEntry(null);
+    window.requestAnimationFrame(() => {
+      if (trigger?.isConnected && !trigger.disabled) {
+        trigger.focus();
+      } else {
+        readyHeadingRef.current?.focus();
+      }
+    });
   }
 
   const totalBytes = useMemo(() => entries.reduce((total, entry) => total + entry.size, 0), [entries]);
@@ -168,9 +194,11 @@ export default function App() {
     isCancelling
       ? 'Cancelling…'
       : status === 'ready'
-        ? entries.length === 0
-          ? 'Archive opened — no extractable files.'
-          : `Extracted ${entries.length} ${entries.length === 1 ? 'file' : 'files'}.`
+        ? selectedEntry
+          ? `Previewing ${selectedEntry.path}.`
+          : entries.length === 0
+            ? 'Archive opened — no extractable files.'
+            : `Extracted ${entries.length} ${entries.length === 1 ? 'file' : 'files'}.`
         : status === 'error'
           ? error
           : typeHint;
@@ -275,7 +303,27 @@ export default function App() {
               </div>
             </div>
             <fieldset disabled={isDownloading} className="m-0 min-w-0 border-0 p-0">
-              <FileTree entries={entries} onDownload={downloadEntry} />
+              <div
+                className={
+                  entries.length > 0
+                    ? 'grid items-start gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(17rem,2fr)]'
+                    : ''
+                }
+              >
+                <FileTree
+                  entries={entries}
+                  selectedPath={selectedEntry?.path ?? null}
+                  onSelect={selectEntry}
+                  onDownload={downloadEntry}
+                />
+                {entries.length > 0 && (
+                  <FilePreview
+                    entry={selectedEntry}
+                    onClose={closePreview}
+                    onDownload={downloadEntry}
+                  />
+                )}
+              </div>
             </fieldset>
             <p className="mt-4 text-center text-xs text-stone-500">
               Download all creates a safe, fresh ZIP that preserves folder names on Chrome and

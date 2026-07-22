@@ -24,7 +24,7 @@ const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..
 const REPORT_PATH = path.join(REPO_ROOT, 'e2e-results.json');
 
 // The suite must run at least this many tests. Bump when adding/removing specs.
-const EXPECTED_MIN = Number(process.env.E2E_EXPECTED_MIN ?? '5');
+const EXPECTED_MIN = Number(process.env.E2E_EXPECTED_MIN ?? '6');
 
 function fail(message) {
   process.stderr.write(`[assert-e2e-ran] FAIL: ${message}\n`);

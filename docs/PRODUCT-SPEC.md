@@ -67,6 +67,9 @@ Refuses upload-based online tools on principle, independent of how convenient th
 - Accept a `.zip` file via drag-and-drop onto a dropzone or via a file picker.
 - Parse the archive's central directory and display a file tree (folders and files, with sizes
   and paths) before extracting anything.
+- Let the user select any extracted regular file and preview bounded text or image content inline,
+  with its path, size, and derived type. Binary and oversized entries remain downloadable and show
+  a clear no-preview state.
 - Let the user extract all entries or a selected subset.
 - Show progress during extraction and allow cancellation mid-operation.
 - Deliver output as individual file downloads, a "download all as one zip" convenience, or (on
@@ -82,6 +85,11 @@ Refuses upload-based online tools on principle, independent of how convenient th
 
 - Given a `.zip` with nested folders, the file tree shows every entry with its size and folder
   path.
+- Given an extracted text or supported image entry, selecting its row previews it inline from the
+  already-emitted entry bytes without another worker operation or network request.
+- Given a binary entry, a text file over the preview window, or an image over the render cap, the
+  UI never dumps unbounded content: text is visibly truncated and other unsupported previews show
+  a clear message while preserving the Download action.
 - Given a valid `.zip` under the supported size range, extracting all entries produces every
   file with correct contents and correct relative paths.
 - Given a multi-hundred-MB archive, extraction streams through a Web Worker and the page UI

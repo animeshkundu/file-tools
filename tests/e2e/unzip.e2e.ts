@@ -16,9 +16,12 @@
 import { test, expect } from '@playwright/test';
 import { Builder, By, until } from 'selenium-webdriver';
 import { Options as FirefoxOptions, ServiceBuilder, Context, Driver as FirefoxDriver } from 'selenium-webdriver/firefox.js';
-import { existsSync } from 'fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { strToU8, zipSync } from 'fflate';
+import { IMAGE_PREVIEW_LIMIT_BYTES } from '../../lib/tools/unzip/preview';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = path.resolve(__dirname, '../..');
@@ -74,6 +77,51 @@ async function getExtensionUUID(driver: FirefoxDriver): Promise<string> {
   return uuid;
 }
 
+function createPreviewFixture(): { fixturePath: string; cleanup: () => void } {
+  const fixtureDirectory = mkdtempSync(path.join(tmpdir(), 'unzip-preview-'));
+  const fixturePath = path.join(fixtureDirectory, 'preview.zip');
+  const pixelPng = Buffer.from(
+    'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=',
+    'base64',
+  );
+  const oversizedPng = new Uint8Array(IMAGE_PREVIEW_LIMIT_BYTES + 1);
+  oversizedPng.set(pixelPng.subarray(0, 8));
+
+  writeFileSync(
+    fixturePath,
+    zipSync({
+      'preview.txt': strToU8('Preview me locally.'),
+      'pixel.png': pixelPng,
+      'binary.bin': new Uint8Array([0x00, 0x01, 0x02, 0x03]),
+      'oversized.png': oversizedPng,
+    }),
+  );
+
+  return {
+    fixturePath,
+    cleanup: () => rmSync(fixtureDirectory, { recursive: true, force: true }),
+  };
+}
+
+async function getExternalResourceUrls(
+  driver: FirefoxDriver,
+  extensionPrefix: string,
+): Promise<string[]> {
+  return (
+    (await driver.executeScript<string[]>(
+      `return performance.getEntriesByType('resource')
+        .map(function(e) { return e.name; })
+        .filter(function(url) {
+          return !url.startsWith(arguments[0])
+            && !url.startsWith('blob:' + arguments[0])
+            && !url.startsWith('data:')
+            && !url.startsWith('about:');
+        });`,
+      extensionPrefix,
+    )) ?? []
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -127,18 +175,83 @@ test.describe('Unzip — Firefox extension E2E', () => {
 
     // No resource must have been loaded from outside the extension origin.
     const prefix = `moz-extension://${extUUID}/`;
-    const externalRequests = await driver.executeScript<string[]>(
-      `return performance.getEntriesByType('resource')
-        .map(function(e) { return e.name; })
-        .filter(function(url) {
-          return !url.startsWith(arguments[0]) && !url.startsWith('about:');
-        });`,
-      prefix,
-    );
+    const externalRequests = await getExternalResourceUrls(driver, prefix);
     expect(
       externalRequests,
-      `External requests: ${(externalRequests ?? []).join(', ')}`,
+      `External requests: ${externalRequests.join(', ')}`,
     ).toHaveLength(0);
+  });
+
+  test('previews text and images and handles binary and oversized entries', async () => {
+    const fixture = createPreviewFixture();
+    try {
+      const appURL = `moz-extension://${extUUID}/app.html`;
+      await driver.get(appURL);
+      await driver.wait(until.elementLocated(By.css('h1')), 30_000);
+
+      const fileInput = await driver.findElement(By.css('input[type="file"]'));
+      await fileInput.sendKeys(fixture.fixturePath);
+      await driver.wait(
+        until.elementLocated(By.css('[aria-label="Preview preview.txt"]')),
+        15_000,
+      );
+
+      await driver.findElement(By.css('[aria-label="Preview preview.txt"]')).click();
+      await driver.wait(async () => {
+        const panel = await driver.findElement(By.id('file-preview'));
+        return (await panel.getText()).includes('Preview me locally.');
+      }, 5_000);
+      let panelText = await driver.findElement(By.id('file-preview')).getText();
+      expect(panelText).toContain('Plain text');
+      expect(panelText).toContain('19 B');
+
+      await driver.findElement(By.css('[aria-label="Preview pixel.png"]')).click();
+      await driver.wait(
+        async () =>
+          driver.executeScript<boolean>(
+            `const image = document.querySelector('#file-preview img');
+             return Boolean(image && image.complete && image.naturalWidth > 0);`,
+          ),
+        5_000,
+        'Timed out waiting for image preview',
+      );
+      panelText = await driver.findElement(By.id('file-preview')).getText();
+      expect(panelText).toContain('PNG image');
+
+      await driver.findElement(By.css('[aria-label="Preview binary.bin"]')).click();
+      panelText = await driver.findElement(By.id('file-preview')).getText();
+      expect(panelText).toContain('No inline preview');
+      expect(panelText).toContain('BIN file (binary)');
+      expect(
+        await driver
+          .findElement(By.css('[aria-label="Download binary.bin from preview"]'))
+          .isDisplayed(),
+      ).toBe(true);
+
+      await driver.findElement(By.css('[aria-label="Preview oversized.png"]')).click();
+      panelText = await driver.findElement(By.id('file-preview')).getText();
+      expect(panelText).toContain('larger than the 10 MB inline preview limit');
+
+      await driver.findElement(By.css('[aria-label="Close preview"]')).click();
+      panelText = await driver.findElement(By.id('file-preview')).getText();
+      expect(panelText).toContain('Select a file to preview');
+      await driver.wait(
+        async () =>
+          (await driver.switchTo().activeElement().getAttribute('aria-label')) ===
+          'Preview oversized.png',
+        2_000,
+        'Timed out waiting for preview trigger focus restoration',
+      );
+
+      const prefix = `moz-extension://${extUUID}/`;
+      const externalRequests = await getExternalResourceUrls(driver, prefix);
+      expect(
+        externalRequests,
+        `External requests: ${externalRequests.join(', ')}`,
+      ).toHaveLength(0);
+    } finally {
+      fixture.cleanup();
+    }
   });
 });
 
