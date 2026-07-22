@@ -35,7 +35,7 @@ program's long-term target, not as a structure to describe as already in place.
 
 | Surface | File | Role | Lifetime |
 | --- | --- | --- | --- |
-| App page | `entrypoints/app/` (`App.tsx`, `main.tsx`, `index.html`) | Durable UI host: file picker/drop target, progress, results tree, downloads | Lives as long as the tab is open |
+| App page | `entrypoints/app/` (`App.tsx`, `main.tsx`, `index.html`) | Durable UI host: file picker/drop target, progress, results tree, inline preview, downloads | Lives as long as the tab is open |
 | Background | `entrypoints/background.ts` | Glue only: `browser.action.onClicked` opens the app page in a new tab | Chrome: service worker, spun up/down by events. Firefox: non-persistent event page |
 
 `background.ts` is five lines and does one thing:
@@ -127,7 +127,10 @@ Step by step:
    fully inflated. Every entry and every emitted chunk passes through `ArchiveSafetyBudget`.
 4. The worker posts one `complete` (all entries + total bytes, entry buffers transferred back) or
    one `error` message, then the page's promise settles and the worker is terminated either way.
-5. `App.tsx` renders the entry list in `FileTree`. Per-file download goes through
+5. `App.tsx` renders the entry list in `FileTree`. Selecting a regular entry reads its already
+   emitted bytes in the page: text decoding is capped at 256 KB, image blob URLs are capped at
+   10 MB and revoked on selection change/close/unmount, and binary entries are not rendered.
+   Per-file download goes through
    `downloadBlob` (objectURL + `<a download>` + delayed `revokeObjectURL`). "Download all" rebuilds
    a fresh ZIP client-side with `client-zip`'s `downloadZip` and downloads that as one file.
 
@@ -143,7 +146,8 @@ research doc, not code.
 - One worker type, spawned fresh per extraction and terminated on completion/error/cancel/timeout.
 - Whole-archive request/response messages (no progress channel, no per-entry streaming).
 - Output via `objectURL` + anchor download only; "download all" via a client-rebuilt ZIP
-  (`client-zip`). No File System Access, no `downloads` API usage, no side panel.
+  (`client-zip`). No File System Access, no `downloads` API usage, and no browser `sidePanel`
+  surface. The app page does include an inline selected-file preview.
 - Zero manifest permissions, zero WASM binaries shipped, zero network calls.
 
 ### 3.2 Current ceilings (real limits of the seed, not hypothetical)

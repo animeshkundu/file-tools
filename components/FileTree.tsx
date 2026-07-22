@@ -53,9 +53,11 @@ export function getFilterSummary(
 type FileTreeProps = {
   entries: ExtractedEntry[];
   onDownload: (entry: ExtractedEntry) => void;
+  onSelect: (entry: ExtractedEntry, trigger: HTMLButtonElement) => void;
+  selectedPath: string | null;
 };
 
-export function FileTree({ entries, onDownload }: FileTreeProps) {
+export function FileTree({ entries, onDownload, onSelect, selectedPath }: FileTreeProps) {
   const [filter, setFilter] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
   const [scrollTop, setScrollTop] = useState(0);
@@ -170,6 +172,7 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
           >
             {visibleEntries.map((entry, idx) => {
               const isRevealed = revealedPath === entry.path;
+              const isSelected = selectedPath === entry.path;
               return (
                 <li
                   key={entry.path}
@@ -180,12 +183,31 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
                     right: 0,
                     height: ROW_HEIGHT,
                   }}
-                  className="grid grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-stone-100 px-4 py-3"
+                  onClick={(event) => {
+                    const trigger = event.currentTarget.querySelector<HTMLButtonElement>(
+                      'button[aria-controls="file-preview"]',
+                    );
+                    if (trigger) onSelect(entry, trigger);
+                  }}
+                  className={`grid cursor-pointer grid-cols-[minmax(0,1fr)_auto_auto] items-center gap-4 border-b border-stone-100 px-4 py-1 hover:bg-stone-50 ${
+                    isSelected ? 'bg-emerald-50' : ''
+                  }`}
                 >
                   <span className="flex min-w-0 items-center gap-1">
-                    <span className="truncate text-sm text-stone-800" title={entry.path}>
+                    <button
+                      type="button"
+                      aria-pressed={isSelected}
+                      aria-controls="file-preview"
+                      aria-label={`Preview ${entry.path}`}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        onSelect(entry, event.currentTarget);
+                      }}
+                      className="min-w-0 truncate rounded text-left text-sm text-stone-800 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      title={entry.path}
+                    >
                       {entry.path}
-                    </span>
+                    </button>
                     <button
                       type="button"
                       aria-expanded={isRevealed}
@@ -195,7 +217,10 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
                           ? `Collapse full path for ${entry.path}`
                           : `Reveal full path for ${entry.path}`
                       }
-                      onClick={() => setRevealedPath(isRevealed ? null : entry.path)}
+                      onClick={(event) => {
+                        event.stopPropagation();
+                        setRevealedPath(isRevealed ? null : entry.path);
+                      }}
                       className="shrink-0 rounded px-1 py-0.5 text-xs text-stone-400 hover:bg-stone-100 hover:text-stone-600 focus:outline-none focus:ring-1 focus:ring-emerald-500"
                     >
                       ⋯
@@ -207,7 +232,10 @@ export function FileTree({ entries, onDownload }: FileTreeProps) {
                   <Button
                     secondary
                     aria-label={`Download ${entry.path}`}
-                    onClick={() => onDownload(entry)}
+                    onClick={(event) => {
+                      event.stopPropagation();
+                      onDownload(entry);
+                    }}
                   >
                     Download
                   </Button>

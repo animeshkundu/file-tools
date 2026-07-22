@@ -111,8 +111,14 @@ load no webfont either, so they stay fully self-contained and render offline.
   `bg-stone-50` header row with uppercase `stone-500` column labels (File / Size / a
   screen-reader-only Action label), rows divided by `divide-stone-100`, filename truncates with a
   `title` tooltip, size is `tabular-nums text-stone-500`, and each row ends in a secondary
-  "Download" button. The list is capped at `max-h-96` with `overflow-auto`, so a large archive
-  scrolls inside the tree rather than growing the page.
+  "Download" button. Rows also select a file for preview and expose that action to keyboards as a
+  real button with an `aria-pressed` state. The list is capped at `max-h-96` with `overflow-auto`,
+  so a large archive scrolls inside the tree rather than growing the page.
+- **FilePreview** (`components/FilePreview.tsx`). An inline card beside the FileTree at desktop
+  widths and below it on narrow screens. It always shows the selected path, human-readable size,
+  and derived type. UTF text is decoded from a bounded 256 KB prefix; supported images use a
+  short-lived local blob URL and a 10 MB render cap. Binary, oversized, and browser-rejected
+  images show a clear no-preview state while retaining the per-file Download action.
 - **Progress** (`components/Progress.tsx`). `h-2 rounded-full bg-emerald-100` track holding a
   fixed `w-1/3` `bg-emerald-600` fill that pulses via `animate-pulse`. There is no determinate
   percentage shown, extraction is fast enough that an indeterminate pulse reads honestly.
@@ -145,8 +151,8 @@ Four states, driven by a single `status` value:
    safely…", a secondary Cancel button, and the Progress bar.
 3. **Ready** - [`mocks/unzip.html`](mocks/unzip.html). Archive name, a bold
    "`{n}` files · `{size}`" heading, "Open another" (secondary) and "Download all" (primary)
-   actions, the FileTree, and a centered helper caption underneath explaining that "Download all"
-   preserves folder names on both Chrome and Firefox.
+   actions, the FileTree with an inline text/image preview panel, and a centered helper caption
+   underneath explaining that "Download all" preserves folder names on both Chrome and Firefox.
 4. **Error** - a red-50/red-200 card, red-950 heading ("This archive could not be opened"),
    red-800 body text with the specific reason, and a primary "Try another file" button that
    resets to idle.
@@ -204,6 +210,9 @@ pictured in the current mock, called out as an open item below).
 - FileTree's action column has a screen-reader-only "Action" label since the visible header only
   needs File/Size; each row's Download button already carries the accessible name it needs
   ("Download") because it sits next to the filename in reading order.
+- Each file row exposes a native Preview button with `aria-pressed` and `aria-controls`; selection
+  is not communicated by the emerald row background alone. The preview panel has a named landmark
+  and a keyboard-operable Close action.
 - Toggles in the settings mock use `role="switch"` with `aria-checked` and an explicit
   `aria-label`, so their state is announced without relying on color alone.
 - Tab order follows visual order top to bottom, left to right on every screen: header content
